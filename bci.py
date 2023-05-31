@@ -38,6 +38,10 @@ CONFIG = [
 
     ofx.Importer(accts.CheckingNumber,
                  accts.CheckingAccount),
+
+    ofx.Importer(accts.SavingsNumber,
+                 accts.SavingsAccount),
+
 ]
 
 # Override the header on extracted text (if desired).

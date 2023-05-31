@@ -101,7 +101,14 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 						assigned=True
 						break
 				if not assigned:
-					unassigned_payees.append(e.narration.split('/')[0])
+					if "CHECK" in e.narration.upper(): 
+						toks=e.narration.split('/')
+						if len(toks) > 1:
+							unassigned_payees.append(toks[1].strip())
+						else:
+							unassigned_payees.append(toks[0].strip())
+					else:
+						unassigned_payees.append(e.narration.split('/')[0].strip())
 			if type(e)==Open:
 				if not e.account in opened_accounts:
 					opened_accounts.append(e.account)
