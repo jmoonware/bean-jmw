@@ -92,8 +92,9 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 		for e in entries:
 			if type(e)==Transaction and (sum([p.units[0] for p in e.postings])!=D(0) or len(e.postings)==1):
 				assigned=False	
+				# this is where we check for the regex patterns
 				for pattern in assignLUT:
-					if pattern in e.narration:
+					if re.search(pattern, e.narration):
 						pval=sum([p.units[0] for p in e.postings])
 						units=amount.Amount(-pval,"USD")
 						new_posting = Posting(assignLUT[pattern],units,None,None,None,{})
@@ -188,12 +189,20 @@ def deduplicate(extracted_entries_list,ledger_entries):
 			if len(d) > 0: # have at least one duplicate
 				ne=e._replace(meta={"mark":"Duplicate"})
 #				sys.stderr.write("Found dup: {0} {1}\n".format(ne,d))
+				if type(ne)==Transaction:
+					ident="Transaction: " + ne.narration
+				elif type(ne)==Open:
+					ident="Open: " + ne.account
+				elif type(ne)==Balance:
+					ident="Balance: " + ne.account
+				else:
+					ident=str(type(ne))
 				if not remove_duplicates:
-					msg="Marked {0} {1}\n".format(ne.date,type(ne))
+					msg="Marked dup {0} {1}\n".format(ne.date,ident)
 					sys.stderr.write(msg)
 					deduped_entries_list[-1][1].append(ne)
 				else:
-					msg="Removed {0} {1}\n".format(ne.date,type(ne))
+					msg="Removed dup {0} {1}\n".format(ne.date,ident)
 					sys.stderr.write(msg)
 #					ne=Note({'orig':ne.narration},ne.date,ne.postings[0].account,'Dup is {0} {1} {2}'.format(str(d[0].date),d[0].postings[0].account,d[0].narration))
 #					deduped_entries_list[-1][1].append(ne)
