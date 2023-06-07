@@ -21,9 +21,12 @@ from beancount.ingest.identify import find_imports
 
 from importers.filters.assign import assign_accounts, assign_check_payees
 from importers.filters.assign import deduplicate
+from importers.qif import qif_importer
 
 import importers.filters.assign 
 importers.filters.assign.dir_path=path.join(path.abspath(os.curdir),"yaml")
+if not path.exists(importers.filters.assign.dir_path):
+    os.makedirs(importers.filters.assign.dir_path)
 
 # set to True to remove duplicate entries from output
 # otherwise mark them in the meta field 'mark'
@@ -33,15 +36,13 @@ import accts
 
 CONFIG = [
 
-    ofx.Importer(accts.CreditCardNumber,
-                 accts.CreditCardAccount),
-
-    ofx.Importer(accts.CheckingNumber,
-                 accts.CheckingAccount),
+    ofx.Importer(accts.CreditCardNumber1,
+                 accts.CreditCardAccount1),
 
     ofx.Importer(accts.SavingsNumber,
                  accts.SavingsAccount),
 
+    qif_importer.Importer(accts.CheckingAccount),
 ]
 
 # Override the header on extracted text (if desired).

@@ -151,7 +151,7 @@ def deduplicate(extracted_entries_list,ledger_entries):
 		all_entries_list.append(ledger_entries)
 	# need at least two entry lists to compare...
 	if len(all_entries_list)<2:
-		return([[[] for _ in len(extracted_entries_list[0][1])]])
+		return([[[] for _ in range(len(extracted_entries_list[0][1]))]])
 	#
 	# Compare the list of ingested to each other, and possibly an existing 
 	# ledger
