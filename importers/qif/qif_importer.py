@@ -24,7 +24,15 @@ class Importer(ImporterProtocol):
 				A boolean, true if this importer can handle this file.
 		"""
 		if os.path.splitext(file.name)[1].upper()=='.QIF':
-			return True
+			head_lines=file.head().split('\n')
+			found=False
+			for ln in range(len(head_lines)):
+				if '!Account' in head_lines[ln]:
+					for l in head_lines[ln+1:]:
+						if self.account_name in l:
+							found=True
+							break
+			return found
 		else:
 			 return False
 		
@@ -42,19 +50,21 @@ class Importer(ImporterProtocol):
 		with open(file.name,'r') as f:
 			qif=QifParser(dayfirst=False).parse(f)	
 		if qif:
-			for tno, qt in enumerate(qif.get_transactions()[0]):
+			for tno, qt in enumerate(qif.get_transactions(True)[0]):
 				if qt.memo:
-					str_memo=" / "+qt.memo
+					str_memo=qt.memo
 				else:
 					str_memo=""
 				meta=new_metadata(file.name, tno)
-				meta['category']=qt.category
+				if qt.category:
+					meta['category']=qt.category
+					str_memo = qt.category + " / " + str_memo
 				tn=Transaction(
 					meta=meta,
 					date=qt.date,
 					flag=None,
 					payee=qt.payee,
-					narration=qt.payee+str_memo,
+					narration= qt.payee + " / " + str_memo,
 					tags=EMPTY_SET,
 					links=EMPTY_SET,
 					postings=[],
