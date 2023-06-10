@@ -11,10 +11,12 @@ import os,sys
 import yaml
 from datetime import datetime as dt
 from datetime import timedelta
+from collections import OrderedDict
 
 dir_path = "" # set this after import
 numeric_regex="^[0-9]+$"
 remove_duplicates=True
+missing_payee_tag="UNASSIGNED"
 
 def assign_check_payees(extracted_entries,account):
 	""" Assign check payees from a yaml file by number
@@ -24,6 +26,12 @@ def assign_check_payees(extracted_entries,account):
 			account: string name of account
 		Returns:
 			new list of entries
+		Notes:
+			This will create an <Account_Name>_payees_unassigned.yaml file
+			for check numbers that are not assigned a payee
+			If the check has metadata (from say a Quicken export) then this
+			is used to create a "hint" in the payee column of the unassigned 
+			yaml file.
 	"""
 	payees_for_check={}
 	check_file_prefix=account.replace(":","_")+"_payees"
@@ -36,7 +44,7 @@ def assign_check_payees(extracted_entries,account):
 	
 	# assign payees on checks
 	new_entries=[] # list of entries
-	unassigned_checks=[]
+	unassigned_checks={}
 	for e in extracted_entries:
 		new_entry=e
 		if type(e)==Transaction:
@@ -49,17 +57,24 @@ def assign_check_payees(extracted_entries,account):
 						if cn in payees_for_check:
 							new_entry=e._replace(narration="CHECK {0} / {1}".format(checkno_match.string,payees_for_check[cn]))
 						else: # unassigned check number
-							unassigned_checks.append(cn) 
-				else:
+							# previously categorized, probably by Quicken
+							if "category" in e.meta:
+								unassigned_checks[cn]=e.meta['category']
+							else:
+								unassigned_checks[cn]=missing_payee_tag + " # " + dt.date(e.date).isoformat()
+				elif re.match("^CHECK$",e.narration.upper()):
 					new_entry=e._replace(narration="CHECK / CASH")
 		new_entries.append(new_entry)
 	# track unassigned checks
 	if len(unassigned_checks) > 0:
-		sys.stderr.write("Found {0} unassigned checks for {1}\n".format(len(unassigned_checks),account))
+		hints=len([x for x in unassigned_checks if missing_payee_tag in unassigned_checks[x]])
+		sys.stderr.write("Found {0} unassigned checks, {1} without hints for {2} ({3},{4} entries)\n".format(len(unassigned_checks),str(hints),account,len(extracted_entries),len(new_entries)))
 		with open(os.path.join(dir_path,check_file_prefix+"_unassigned.yaml"),"w") as f:
 			f.write("# Unassigned check payees\n")
-			for c in unassigned_checks:
-				f.write(str(c)+":"+(6-len(str(c)))*" "+"\n")
+			# order by check number, not item order
+			od=OrderedDict(sorted(unassigned_checks.items()))
+			for k,v in od.items():
+				f.write(str(k)+":"+(6-len(str(k)))*" "+v+"\n")
  
 	return(new_entries)
 
@@ -78,7 +93,7 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	for ex_file, entries in extracted_entries_list:
 		# links payees/narration to account 
 		assignLUT={}
-		unassigned_payees=[]
+		unassigned_payees={}
 		# default account file name for unassigned
 		account='unknown'
 		account_file=os.path.join(dir_path,account+".yaml")
@@ -102,25 +117,28 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 						assigned=True
 						break
 				if not assigned:
+					pre_assigned_category="Expenses:"
+					if 'category' in e.meta:
+						pre_assigned_category+=(e.meta['category'].replace(" ",""))
 					if "CHECK" in e.narration.upper(): 
 						toks=e.narration.split('/')
 						if len(toks) > 1:
-							unassigned_payees.append(toks[1].strip())
+							unassigned_payees[toks[1].strip()]=pre_assigned_category
 						else:
-							unassigned_payees.append(toks[0].strip())
+							unassigned_payees[toks[0].strip()]=pre_assigned_category
 					else:
-						unassigned_payees.append(e.narration.split('/')[0].strip())
+						unassigned_payees[e.narration.split('/')[0].strip()]=pre_assigned_category
 			if type(e)==Open:
 				if not e.account in opened_accounts:
 					opened_accounts.append(e.account)
 		# unassigned payees
-		nu=np.unique(unassigned_payees)
-		if len(nu) > 0:
-			sys.stderr.write("Found {0} unassigned accounts for {1}\n".format(len(nu),account))
+		oup=OrderedDict(sorted(unassigned_payees.items()))
+		if len(oup) > 0:
+			sys.stderr.write("Found {0} unassigned accounts for {1} ({2} entries)\n".format(len(oup),account,len(entries)))
 			with open(os.path.splitext(account_file)[0]+"_unassigned.yaml",'w') as f:
 				f.write("# Unassigned accounts\n") 
-				for ni in nu:
-					f.write(ni+":"+(40-len(ni))*" " + "\n")
+				for k in oup:
+					f.write(k + ":" + (40-len(k))*" " + oup[k] + "\n")
 		new_entries[-1][1].extend(entries)
 
 	# see what accounts we have

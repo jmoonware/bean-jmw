@@ -8,20 +8,15 @@ import os
 sys.path.insert(0, path.abspath(os.curdir))
 sys.path.insert(0, path.join(path.dirname(__file__)))
 
-#from importers.utrade import utrade_csv
-#from importers.acme import acme_pdf
-
 from beancount.core import data
 from beancount.core.data import Note
 from beancount.ingest import scripts_utils
 from beancount.ingest import extract
-from beancount.ingest.importers import ofx
 from beancount.ingest import cache
 from beancount.ingest.identify import find_imports
 
 from importers.filters.assign import assign_accounts, assign_check_payees
 from importers.filters.assign import deduplicate
-from importers.qif import qif_importer
 
 import importers.filters.assign 
 importers.filters.assign.dir_path=path.join(path.abspath(os.curdir),"yaml")
@@ -34,20 +29,10 @@ remove_duplicates=True
 
 import accts
 
-CONFIG = [
-
-    ofx.Importer(accts.CreditCardNumber1,
-                 accts.CreditCardAccount1),
-
-    ofx.Importer(accts.SavingsNumber,
-                 accts.SavingsAccount),
-
-    qif_importer.Importer(accts.CheckingAccount),
-]
+CONFIG = accts.CONFIG
 
 # Override the header on extracted text (if desired).
 extract.HEADER = ';; -*- mode: org; mode: beancount; coding: utf-8; -*-\n'
-
 
 def process_extracted_entries(extracted_entries_list, ledger_entries):
     """ Filter function

@@ -59,12 +59,15 @@ class Importer(ImporterProtocol):
 				if qt.category:
 					meta['category']=qt.category
 					str_memo = qt.category + " / " + str_memo
+				num_str=""
+				if qt.num:
+					num_str=qt.num
 				tn=Transaction(
 					meta=meta,
-					date=qt.date,
-					flag=None,
+					date=dt.date(qt.date),
+					flag="*",
 					payee=qt.payee,
-					narration= qt.payee + " / " + str_memo,
+					narration= qt.payee + " " + num_str + " / " + str_memo,
 					tags=EMPTY_SET,
 					links=EMPTY_SET,
 					postings=[],
