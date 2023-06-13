@@ -18,7 +18,7 @@ numeric_regex="^[0-9]+$"
 remove_duplicates=True
 missing_payee_tag="UNASSIGNED"
 
-def assign_check_payees(extracted_entries,account):
+def assign_check_payees(extracted_entries,account,filename=""):
 	""" Assign check payees from a yaml file by number
 		Call this function only for checking accounts
 		Arguments:
@@ -48,7 +48,7 @@ def assign_check_payees(extracted_entries,account):
 	for e in extracted_entries:
 		new_entry=e
 		if type(e)==Transaction:
-			if "CHECK" in e.narration.upper():
+			if "CHECK " in e.narration.upper():
 				toks=e.narration.split()
 				if len(toks) > 1:
 					checkno_match=re.match(numeric_regex,toks[1])
@@ -61,16 +61,17 @@ def assign_check_payees(extracted_entries,account):
 							if "category" in e.meta:
 								unassigned_checks[cn]=e.meta['category']
 							else:
-								unassigned_checks[cn]=missing_payee_tag + " # " + dt.date(e.date).isoformat()
+								unassigned_checks[cn]=missing_payee_tag + " # " + e.date.isoformat()
+				# FIXME: special case for some banks
 				elif re.match("^CHECK$",e.narration.upper()):
 					new_entry=e._replace(narration="CHECK / CASH")
 		new_entries.append(new_entry)
 	# track unassigned checks
 	if len(unassigned_checks) > 0:
 		hints=len([x for x in unassigned_checks if missing_payee_tag in unassigned_checks[x]])
-		sys.stderr.write("Found {0} unassigned checks, {1} without hints for {2} ({3},{4} entries)\n".format(len(unassigned_checks),str(hints),account,len(extracted_entries),len(new_entries)))
-		with open(os.path.join(dir_path,check_file_prefix+"_unassigned.yaml"),"w") as f:
-			f.write("# Unassigned check payees\n")
+		sys.stderr.write("Found {0} unassigned checks, {1} without hints for {2} ({3},{4} entries) for file {5}\n".format(len(unassigned_checks),str(hints),account,len(extracted_entries),len(new_entries),filename))
+		with open(os.path.join(dir_path,check_file_prefix+"_unassigned.yaml"),"a") as f:
+			f.write("# Unassigned check payees for {0}\n".format(filename))
 			# order by check number, not item order
 			od=OrderedDict(sorted(unassigned_checks.items()))
 			for k,v in od.items():
@@ -80,6 +81,46 @@ def assign_check_payees(extracted_entries,account):
 
 
 default_account_open_date='2000-01-01'
+
+# problematic regex or yaml characters - replace with '.'
+ry_chars=['#','*',',',"'",':','[',']','{','}','^','$','?','+','&','-']
+placeholder='xxxxx' # something uncommon, and non-numeric
+annoying_prefixes=['Checkcard[ ]+[0-9]+ ','CHECKCARD[ ]+[0-9]+ ','Select Purchase. ','Debit Card Purchase. ','Sou ','ElectCHK [0-9]+ ','Cns ']
+
+def regexify(s):
+	""" Replaces regex special characters that conflict with yaml
+		or do unwanted regex operations
+		Args: s = string, part of narration that will become regex search
+		Returns: cleaned up regex pattern that should work as yaml
+		Notes: Will replace all numbers with generic [0-9]+ pattern 
+	"""
+	rets=s
+	if rets:
+		rets=s.strip()
+		for c in ry_chars:
+			rets=rets.replace(c,".")
+		for p in annoying_prefixes:
+			ps=re.match(p, rets)
+			if ps:
+				rets=rets[ps.span()[1]:] # remove the prefix
+				break
+		# replace specific numbers with generic regex match
+		sp=0
+		if not "CHECK " in rets.upper(): # don't replace check numbers
+			while True:
+				sr=re.search('[0-9]+', rets[sp:])
+				if sr:
+					span=sr.span()
+					sl=rets[span[0]+sp:span[1]+sp]
+					rets=rets.replace(sl,'['+placeholder+']+',1)
+					nnum=span[1]-span[0]
+					repnum=3+len(placeholder)
+					sp=sp+span[1]+(repnum-nnum) # rets could grow or shrink
+					if sp >= len(rets)-1:
+						break
+				else:
+					break
+	return(rets.replace(placeholder,'0-9'))
 
 def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	""" Assigns accounts from payee field and open any new accounts
@@ -104,10 +145,11 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 				with open(account_file,'r') as f:
 					assignLUT=yaml.safe_load(f)
 		new_entries.append((ex_file,[]))
-		for e in entries:
+		for en,e in enumerate(entries):
 			if type(e)==Transaction and (sum([p.units[0] for p in e.postings])!=D(0) or len(e.postings)==1):
 				assigned=False	
 				# this is where we check for the regex patterns
+				# FIXME: Compile and turn pattern into one long reference
 				for pattern in assignLUT:
 					if re.search(pattern, e.narration):
 						pval=sum([p.units[0] for p in e.postings])
@@ -118,25 +160,23 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 						break
 				if not assigned:
 					pre_assigned_category="Expenses:"
+					sys.stderr.write(str(en)+"\r")
 					if 'category' in e.meta:
-						pre_assigned_category+=(e.meta['category'].replace(" ",""))
-					if "CHECK" in e.narration.upper(): 
-						toks=e.narration.split('/')
-						if len(toks) > 1:
-							unassigned_payees[toks[1].strip()]=pre_assigned_category
-						else:
-							unassigned_payees[toks[0].strip()]=pre_assigned_category
+						pre_assigned_category+=e.meta['category']
+					toks=e.narration.split('/')
+					if "CHECK " in e.narration.upper() and len(toks) > 1: 
+						unassigned_payees[regexify(toks[1])]=pre_assigned_category
 					else:
-						unassigned_payees[e.narration.split('/')[0].strip()]=pre_assigned_category
+						unassigned_payees[regexify(toks[0])]=pre_assigned_category
 			if type(e)==Open:
 				if not e.account in opened_accounts:
 					opened_accounts.append(e.account)
 		# unassigned payees
 		oup=OrderedDict(sorted(unassigned_payees.items()))
 		if len(oup) > 0:
-			sys.stderr.write("Found {0} unassigned accounts for {1} ({2} entries)\n".format(len(oup),account,len(entries)))
-			with open(os.path.splitext(account_file)[0]+"_unassigned.yaml",'w') as f:
-				f.write("# Unassigned accounts\n") 
+			sys.stderr.write("Found {0} unassigned accounts for {1} ({2} entries) for file {3}\n".format(len(oup),account,len(entries),ex_file))
+			with open(os.path.splitext(account_file)[0]+"_unassigned.yaml","a") as f:
+				f.write("# Unassigned accounts for {0}\n".format(ex_file)) 
 				for k in oup:
 					f.write(k + ":" + (40-len(k))*" " + oup[k] + "\n")
 		new_entries[-1][1].extend(entries)

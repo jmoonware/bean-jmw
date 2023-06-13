@@ -73,8 +73,8 @@ def process_extracted_entries(extracted_entries_list, ledger_entries):
 	# Assign payees to check via <account>_payees.yaml file for account
     new_entries_list=[]
     for fn,entries in extracted_entries_list:
-        if fn in filename_accounts.keys() and "Checking" in filename_accounts[fn]:
-            new_entries_list.append((fn,assign_check_payees(entries,filename_accounts[fn])))
+        if fn in filename_accounts.keys() and "CHECKING" in filename_accounts[fn].upper():
+            new_entries_list.append((fn,assign_check_payees(entries,filename_accounts[fn],fn)))
         else:
             new_entries_list.append((fn,entries))
 

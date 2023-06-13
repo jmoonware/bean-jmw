@@ -57,17 +57,21 @@ class Importer(ImporterProtocol):
 					str_memo=""
 				meta=new_metadata(file.name, tno)
 				if qt.category:
-					meta['category']=qt.category
+					# remove spaces and apostropes
+					meta['category']=qt.category.replace(' ','').replace('\'','')
 					str_memo = qt.category + " / " + str_memo
 				num_str=""
 				if qt.num:
 					num_str=qt.num
+				payee_str=""
+				if qt.payee:
+					payee_str=qt.payee
 				tn=Transaction(
 					meta=meta,
 					date=dt.date(qt.date),
 					flag="*",
-					payee=qt.payee,
-					narration= qt.payee + " " + num_str + " / " + str_memo,
+					payee=payee_str,
+					narration= payee_str + " " + num_str + " / " + str_memo,
 					tags=EMPTY_SET,
 					links=EMPTY_SET,
 					postings=[],
