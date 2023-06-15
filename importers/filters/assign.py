@@ -14,7 +14,7 @@ from datetime import timedelta
 from collections import OrderedDict
 
 dir_path = "" # set this after import
-numeric_regex="^[0-9]+$"
+numeric_regex="[0-9]+"
 remove_duplicates=True
 missing_payee_tag="UNASSIGNED"
 
@@ -49,21 +49,24 @@ def assign_check_payees(extracted_entries,account,filename=""):
 		new_entry=e
 		if type(e)==Transaction:
 			if "CHECK " in e.narration.upper():
-				toks=e.narration.split()
+				toks=e.narration.upper().split('CHECK ')
 				if len(toks) > 1:
-					checkno_match=re.match(numeric_regex,toks[1])
+					checkno_match=re.search(numeric_regex,toks[1])
 					if checkno_match:
-						cn=int(checkno_match.string)
+						cn=int(checkno_match.group())
 						if cn in payees_for_check:
-							new_entry=e._replace(narration="CHECK {0} / {1}".format(checkno_match.string,payees_for_check[cn]))
+							new_entry=e._replace(narration="{0} / Check {1}".format(payees_for_check[cn],str(cn)))
 						else: # unassigned check number
 							# previously categorized, probably by Quicken
 							if "category" in e.meta:
 								unassigned_checks[cn]=e.meta['category']
 							else:
-								unassigned_checks[cn]=missing_payee_tag + " # " + e.date.isoformat()
+								amt=""
+								if len(e.postings)>0:
+									amt = e.postings[0].units
+								unassigned_checks[cn]=missing_payee_tag + " # " + e.date.isoformat()+","+str(amt)
 				# FIXME: special case for some banks
-				elif re.match("^CHECK$",e.narration.upper()):
+				elif re.match("CHECK$",e.narration.upper()):
 					new_entry=e._replace(narration="CHECK / CASH")
 		new_entries.append(new_entry)
 	# track unassigned checks
@@ -83,8 +86,8 @@ def assign_check_payees(extracted_entries,account,filename=""):
 default_account_open_date='2000-01-01'
 
 # problematic regex or yaml characters - replace with '.'
-ry_chars=['#','*',',',"'",':','[',']','{','}','^','$','?','+','&','-']
-placeholder='xxxxx' # something uncommon, and non-numeric
+ry_chars=['#','*',',',"'",':','[',']','{','}','^','$','?','+','&','-','(',')']
+# TODO: make configurable
 annoying_prefixes=['Checkcard[ ]+[0-9]+ ','CHECKCARD[ ]+[0-9]+ ','Select Purchase. ','Debit Card Purchase. ','Sou ','ElectCHK [0-9]+ ','Cns ']
 
 def regexify(s):
@@ -97,6 +100,8 @@ def regexify(s):
 	rets=s
 	if rets:
 		rets=s.strip()
+		if len(rets)==0:
+			return("EMPTY")
 		for c in ry_chars:
 			rets=rets.replace(c,".")
 		for p in annoying_prefixes:
@@ -105,22 +110,32 @@ def regexify(s):
 				rets=rets[ps.span()[1]:] # remove the prefix
 				break
 		# replace specific numbers with generic regex match
+		# If it is just a bunch of numbers, don't replace with generic
+		if not re.search("[A-Za-z]+",rets):
+			if len(rets) < 4: # explicit match, e.g. "A  / ..."
+				rets='^'+rets+'[ ]+/'
+			return(rets)
 		sp=0
 		if not "CHECK " in rets.upper(): # don't replace check numbers
+			# TODO: make better
 			while True:
 				sr=re.search('[0-9]+', rets[sp:])
 				if sr:
 					span=sr.span()
 					sl=rets[span[0]+sp:span[1]+sp]
-					rets=rets.replace(sl,'['+placeholder+']+',1)
 					nnum=span[1]-span[0]
-					repnum=3+len(placeholder)
+					tail_rets=rets[sp:].replace(sl,'[0-9]{'+str(nnum)+'}',1)
+					rets=rets[:sp]+tail_rets
+					repnum=7+len(str(nnum))
 					sp=sp+span[1]+(repnum-nnum) # rets could grow or shrink
 					if sp >= len(rets)-1:
 						break
 				else:
 					break
-	return(rets.replace(placeholder,'0-9'))
+	# final clean up
+	if len(rets) < 4: # make it an explicit match 
+		rets="^"+rets+"[ ]+/"
+	return(rets)
 
 def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	""" Assigns accounts from payee field and open any new accounts
@@ -150,35 +165,54 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 				assigned=False	
 				# this is where we check for the regex patterns
 				# FIXME: Compile and turn pattern into one long reference
+				contiguous=0
 				for pattern in assignLUT:
-					if re.search(pattern, e.narration):
-						pval=sum([p.units[0] for p in e.postings])
+					sr=None
+					try:
+						sr=re.search(pattern, e.narration)
+					except Exception as ex:
+						sys.stderr.write("Bad regex: pattern=\"{0}\", narration=\"{1}\", error={2}\n".format(pattern,e.narration,str(ex)))
+					if sr:
+						if len(e.postings)!=2:
+							pval=sum([p.units[0] for p in e.postings])
+						else:
+							pval= -e.postings[1].units[0]
 						units=amount.Amount(-pval,"USD")
 						new_posting = Posting(assignLUT[pattern],units,None,None,None,{})
-						e.postings.append(new_posting)
+						if len(e.postings)!=2: # add additional posting
+							e.postings.append(new_posting)
+						else: # overwrite second posting
+							e.postings[1]=new_posting
 						assigned=True
+						contiguous+=1
+					# found at least one match, then subsequently didn't match
+					# so terminate the rest
+					# if patterns in search order, then longest is assigned
+					if not sr and contiguous > 0: 
 						break
 				if not assigned:
 					pre_assigned_category="Expenses:"
 					sys.stderr.write(str(en)+"\r")
 					if 'category' in e.meta:
 						pre_assigned_category+=e.meta['category']
-					toks=e.narration.split('/')
-					if "CHECK " in e.narration.upper() and len(toks) > 1: 
-						unassigned_payees[regexify(toks[1])]=pre_assigned_category
 					else:
-						unassigned_payees[regexify(toks[0])]=pre_assigned_category
+						pre_assigned_category+="UNASSIGNED"
+					toks=e.narration.split('/') # first is always payee
+					unassigned_payees[regexify(toks[0])]=pre_assigned_category
 			if type(e)==Open:
 				if not e.account in opened_accounts:
 					opened_accounts.append(e.account)
-		# unassigned payees
+		# unassigned payees - alpha sorted
 		oup=OrderedDict(sorted(unassigned_payees.items()))
 		if len(oup) > 0:
 			sys.stderr.write("Found {0} unassigned accounts for {1} ({2} entries) for file {3}\n".format(len(oup),account,len(entries),ex_file))
 			with open(os.path.splitext(account_file)[0]+"_unassigned.yaml","a") as f:
 				f.write("# Unassigned accounts for {0}\n".format(ex_file)) 
 				for k in oup:
-					f.write(k + ":" + (40-len(k))*" " + oup[k] + "\n")
+					if len(k) < 40:
+						f.write("\""+k+"\"" + ":" + (40-len(k))*" " + oup[k] + "\n")
+					else: # really long key...
+						f.write("\""+k+"\"" + ": " + oup[k] + "\n")
 		new_entries[-1][1].extend(entries)
 
 	# see what accounts we have

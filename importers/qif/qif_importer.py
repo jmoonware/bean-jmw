@@ -10,6 +10,8 @@ from qifparse.parser import QifParser
 
 from datetime import datetime as dt
 
+quicken_category_remove=[' ','\'','&','-','+']
+
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD'):
 		self.account_name=account_name
@@ -52,26 +54,44 @@ class Importer(ImporterProtocol):
 		if qif:
 			for tno, qt in enumerate(qif.get_transactions(True)[0]):
 				if qt.memo:
-					str_memo=qt.memo
+					str_memo=qt.memo.strip().replace('/','.')
 				else:
 					str_memo=""
 				meta=new_metadata(file.name, tno)
 				if qt.category:
-					# remove spaces and apostropes
-					meta['category']=qt.category.replace(' ','').replace('\'','')
+					# remove invalid chars, capitalize
+					clean_category=qt.category
+					for c in quicken_category_remove:
+						clean_category= clean_category.replace(c,"")
+					cat_toks=clean_category.split(":")
+					cap_cats=[]
+					for ct in cat_toks: # Capitalize First LetterInWords
+						cap_cats.append(ct[0].upper()+ct[1:]) 
+					meta['category']=":".join(cap_cats)
+					# track original in memo
 					str_memo = qt.category + " / " + str_memo
 				num_str=""
 				if qt.num:
-					num_str=qt.num
+					num_str=qt.num.strip()
+				if len(num_str) > 0:
+					num_str=" "+num_str
 				payee_str=""
 				if qt.payee:
-					payee_str=qt.payee
+					payee_str=qt.payee.strip().replace('/','.')
+					if "CHECK" in qt.payee.upper():
+						payee_str="Check"
+				narration_str=payee_str + num_str + " / " + str_memo
+				if narration_str.split('/')[0].strip()=='':
+					if 'category' in meta:
+						narration_str=meta['category']
+					else: # no payee, number, or category...
+						narration_str="EMPTY"
 				tn=Transaction(
 					meta=meta,
 					date=dt.date(qt.date),
 					flag="*",
 					payee=payee_str,
-					narration= payee_str + " " + num_str + " / " + str_memo,
+					narration=narration_str.strip(),
 					tags=EMPTY_SET,
 					links=EMPTY_SET,
 					postings=[],
