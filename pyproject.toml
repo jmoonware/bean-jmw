@@ -1,0 +1,14 @@
+[project]
+name = "bean-jmw"
+version = "0.1.0"
+dependencies = [
+    "qifparse @ https://github.com/jmoonware/qifparse",
+    "numpy",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages]
+find = {}
