@@ -1,0 +1,191 @@
+!Account
+NAssets:US:BofA:Checking
+TBank
+^
+!Type:Bank
+^
+D5/15' 0
+U-101.00
+T-101.00
+CX
+PATM Netwk Withdrawal: Shaws 
+MATM Netwk Withdrawal: Shaws S At
+LCash
+^
+D5/15' 0
+U-1.50
+T-1.50
+CX
+PATM Network Fee
+MATM Network Fee
+LBank Charge
+^
+D5/15' 0
+U-49.02
+T-49.02
+CX
+N1059
+PCheck
+MCheck
+LJCPenny
+^
+D5/15' 0
+U-29.16
+T-29.16
+CX
+N1062
+PCheck
+MCheck
+LGroceries
+^
+D5/18' 0
+U-100.00
+T-100.00
+CX
+N1071
+PCheck
+MCheck
+LCash
+^
+D5/19' 0
+U-20.00
+T-20.00
+CX
+N1052
+PCheck
+MCheck
+LCharity
+^
+D5/19' 0
+U-1,308.00
+T-1,308.00
+CX
+N1064
+PCheck
+MCheck
+LMortgage Payment
+^
+D5/22' 0
+U-15.00
+T-15.00
+CX
+N1061
+PCheck
+MCheck
+LCharity
+^
+D5/ 9' 5
+U-87.50
+T-87.50
+C*
+PDebit Card Purchase: Wal-mart 
+MDebit Card Purchase: Wal-mart 
+^
+D5/ 9' 5
+U-37.75
+T-37.75
+C*
+PDebit Card Purchase: Sou The Hom
+MDebit Card Purchase: Sou The Home Depot 
+^
+D5/ 9' 5
+U-35.00
+T-35.00
+C*
+N2902
+PCheck
+MCheck
+^
+D5/10' 5
+U-66.00
+T-66.00
+C*
+N2900
+PCheck
+MCheck
+^
+D5/10' 5
+U-61.75
+T-61.75
+C*
+N2901
+PCheck
+MCheck
+^
+D5/12' 5
+U-105.00
+T-105.00
+C*
+N2899
+PCheck
+MCheck
+^
+D5/12' 5
+U-67.98
+T-67.98
+C*
+N2903
+PCheck
+MCheck
+^
+D5/16' 5
+U-22.85
+T-22.85
+C*
+N2887
+PCheck
+MCheck
+^
+D5/16' 5
+U-70.47
+T-70.47
+C*
+N2904
+PCheck
+MCheck
+^
+D5/16' 5
+U-33.71
+T-33.71
+C*
+N2905
+PCheck
+MCheck
+^
+D5/18' 5
+U-105.00
+T-105.00
+C*
+N2906
+PCheck
+MCheck
+^
+D5/18' 5
+U-177.41
+T-177.41
+C*
+N2907
+PCheck
+MCheck
+^
+D5/18' 5
+U-23.61
+T-23.61
+C*
+N2909
+PCheck
+MCheck
+^
+D5/19' 5
+U-57.67
+T-57.67
+C*
+N2910
+PCheck
+MCheck
+^
+D5/20' 5
+U0.00
+T0.00
+LAmex
+^
