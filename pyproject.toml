@@ -3,7 +3,7 @@ name = "bean_jmw"
 version = "0.1.0"
 dependencies = [
     "qifparse@git+https://github.com/jmoonware/qifparse",
-	"beancount==v2",
+	"beancount==2.3.5",
 	"pyyaml",
     "numpy",
 ]

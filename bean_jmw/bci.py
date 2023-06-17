@@ -27,7 +27,11 @@ if not path.exists(importers.filters.assign.dir_path):
 # otherwise mark them in the meta field 'mark'
 remove_duplicates=True
 
-import accts
+try:
+    import accts
+except ModuleNotFoundError as mnf:
+    sys.stderr.write("Warning: did not find accts.py\n\tMake sure you create one in the downloads directory \n\tfrom which you should execute this module\n")
+    import example_accts as accts
 
 CONFIG = accts.CONFIG
 
