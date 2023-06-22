@@ -53,10 +53,9 @@ class Importer(ImporterProtocol):
 			qif=QifParser(dayfirst=False).parse(f)	
 		if qif:
 			for tno, qt in enumerate(qif.get_transactions(True)[0]):
+				memo_str=""
 				if qt.memo:
-					str_memo=qt.memo.strip().replace('/','.')
-				else:
-					str_memo=""
+					memo_str=qt.memo.strip().replace('/','.')
 				meta=new_metadata(file.name, tno)
 				if qt.category:
 					# remove invalid chars, capitalize
@@ -68,30 +67,24 @@ class Importer(ImporterProtocol):
 					for ct in cat_toks: # Capitalize First LetterInWords
 						cap_cats.append(ct[0].upper()+ct[1:]) 
 					meta['category']=":".join(cap_cats)
-					# track original in memo
-					str_memo = qt.category + " / " + str_memo
 				num_str=""
 				if qt.num:
 					num_str=qt.num.strip()
 				if len(num_str) > 0:
 					num_str=" "+num_str
 				payee_str=""
+				check_str=""
 				if qt.payee:
 					payee_str=qt.payee.strip().replace('/','.')
 					if "CHECK" in qt.payee.upper():
-						payee_str="Check"
-				narration_str=payee_str + num_str + " / " + str_memo
-				if narration_str.split('/')[0].strip()=='':
-					if 'category' in meta:
-						narration_str=meta['category']
-					else: # no payee, number, or category...
-						narration_str="EMPTY"
+						check_str="Check"
+				narration_str=" / ".join([payee_str,memo_str,check_str+num_str])
 				tn=Transaction(
 					meta=meta,
 					date=dt.date(qt.date),
 					flag="*",
 					payee=payee_str,
-					narration=narration_str.strip(),
+					narration=narration_str,
 					tags=EMPTY_SET,
 					links=EMPTY_SET,
 					postings=[],

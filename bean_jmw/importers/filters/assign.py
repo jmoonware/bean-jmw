@@ -16,6 +16,7 @@ from collections import OrderedDict
 dir_path = "" # set this after import
 numeric_regex="[0-9]+"
 remove_duplicates=True
+remove_zero_value_transactions=True
 missing_payee_tag="UNASSIGNED"
 
 def assign_check_payees(extracted_entries,account,filename=""):
@@ -55,7 +56,13 @@ def assign_check_payees(extracted_entries,account,filename=""):
 					if checkno_match:
 						cn=int(checkno_match.group())
 						if cn in payees_for_check:
-							new_entry=e._replace(narration="{0} / Check {1}".format(payees_for_check[cn],str(cn)))
+							# format payee / memo / Check #
+							nsplt=e.narration.split('/')
+							memo_str=""
+							if len(nsplt) > 1:
+								memo_str=nsplt[1]
+							nstr=" / ".join([payees_for_check[cn],memo_str,' '.join(["Check",str(cn)])])
+							new_entry=e._replace(narration=nstr)
 						else: # unassigned check number
 							# previously categorized, probably by Quicken
 							if "category" in e.meta:
@@ -67,7 +74,7 @@ def assign_check_payees(extracted_entries,account,filename=""):
 								unassigned_checks[cn]=missing_payee_tag + " # " + e.date.isoformat()+","+str(amt)
 				# FIXME: special case for some banks
 				elif re.match("CHECK$",e.narration.upper()):
-					new_entry=e._replace(narration="CHECK / CASH")
+					new_entry=e._replace(narration="COUNTER CASH")
 		new_entries.append(new_entry)
 	# track unassigned checks
 	if len(unassigned_checks) > 0:
@@ -95,7 +102,7 @@ def regexify(s):
 		or do unwanted regex operations
 		Args: s = string, part of narration that will become regex search
 		Returns: cleaned up regex pattern that should work as yaml
-		Notes: Will replace all numbers with generic [0-9]+ pattern 
+		Notes: Will replace all numbers with generic [0-9]{n} pattern 
 	"""
 	rets=s
 	if rets:
@@ -113,7 +120,7 @@ def regexify(s):
 		# If it is just a bunch of numbers, don't replace with generic
 		if not re.search("[A-Za-z]+",rets):
 			if len(rets) < 4: # explicit match, e.g. "A  / ..."
-				rets='^'+rets+'[ ]+/'
+				rets='^'+rets+'$' # '[ ]+/'
 			return(rets)
 		sp=0
 		if not "CHECK " in rets.upper(): # don't replace check numbers
@@ -134,7 +141,7 @@ def regexify(s):
 					break
 	# final clean up
 	if len(rets) < 4: # make it an explicit match 
-		rets="^"+rets+"[ ]+/"
+		rets="^"+rets+'$' # "[ ]+/"
 	return(rets)
 
 def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
@@ -159,8 +166,12 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 			if os.path.isfile(account_file):
 				with open(account_file,'r') as f:
 					assignLUT=yaml.safe_load(f)
+					assignLUT=OrderedDict(sorted(assignLUT.items()))
 		new_entries.append((ex_file,[]))
 		for en,e in enumerate(entries):
+			# check for zero value entries - lots of these in CC's
+			if type(e)==Transaction and len(e.postings)==1 and e.postings[0].units[0]==0 and remove_zero_value_transactions: 
+				continue
 			if type(e)==Transaction and (sum([p.units[0] for p in e.postings])!=D(0) or len(e.postings)==1):
 				assigned=False	
 				# this is where we check for the regex patterns
@@ -169,15 +180,21 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 				for pattern in assignLUT:
 					sr=None
 					try:
-						sr=re.search(pattern, e.narration)
+						nsplt=e.narration.split(' / ') 
+						# try 'payee' part of payee / memo / Check #
+						sr=re.search(pattern, nsplt[0])
+						if not sr and 'category' in e.meta:
+							sr=re.search(pattern,e.meta['category'])
 					except Exception as ex:
 						sys.stderr.write("Bad regex: pattern=\"{0}\", narration=\"{1}\", error={2}\n".format(pattern,e.narration,str(ex)))
 					if sr:
 						if len(e.postings)!=2:
 							pval=sum([p.units[0] for p in e.postings])
+							pu=e.postings[0].units.currency
 						else:
 							pval= -e.postings[1].units[0]
-						units=amount.Amount(-pval,"USD")
+							pu = e.postings[1].units.currency
+						units=amount.Amount(-pval,pu)
 						new_posting = Posting(assignLUT[pattern],units,None,None,None,{})
 						if len(e.postings)!=2: # add additional posting
 							e.postings.append(new_posting)
@@ -193,12 +210,16 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 				if not assigned:
 					pre_assigned_category="Expenses:"
 					sys.stderr.write(str(en)+"\r")
+					unassigned_payee=""
 					if 'category' in e.meta:
 						pre_assigned_category+=e.meta['category']
+						unassigned_payee=e.meta['category']
 					else:
 						pre_assigned_category+="UNASSIGNED"
 					toks=e.narration.split('/') # first is always payee
-					unassigned_payees[regexify(toks[0])]=pre_assigned_category
+					if len(toks[0])!=0: # use 1st field of narration 
+						unassigned_payee=toks[0]
+					unassigned_payees[regexify(unassigned_payee)]=pre_assigned_category
 			if type(e)==Open:
 				if not e.account in opened_accounts:
 					opened_accounts.append(e.account)
