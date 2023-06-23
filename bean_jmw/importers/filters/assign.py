@@ -119,7 +119,8 @@ def regexify(s):
 		# replace specific numbers with generic regex match
 		# If it is just a bunch of numbers, don't replace with generic
 		if not re.search("[A-Za-z]+",rets):
-			if len(rets) < 4: # explicit match, e.g. "A  / ..."
+			# explicit match, e.g. "A  / ..."
+			if len(rets) < 4 and len(rets) > 0: 
 				rets='^'+rets+'$' # '[ ]+/'
 			return(rets)
 		sp=0
@@ -140,9 +141,133 @@ def regexify(s):
 				else:
 					break
 	# final clean up
-	if len(rets) < 4: # make it an explicit match 
+	if len(rets) < 4 and len(rets) > 0: # make it an explicit match 
 		rets="^"+rets+'$' # "[ ]+/"
 	return(rets)
+
+def group_regex(yaml_dict):
+	""" Organizes regex patterns from simplest to most complex
+
+		Arguments: yaml_dict, loaded from file where keys are regex patterns
+
+		Returns: dict where each value is a list of regex patterns that
+				match the key
+	
+		Notes:
+			Example: re.search("Foo","FooBar") is not None
+			If the search field has "FooBar", we want to match that,
+			not "Foo" (which also matches)
+			To disambiguate, take longest match after checking all patterns 
+			in list
+			
+			Note that yaml_util should be used to remove rules that assign
+			to the same account (e.g. if "Foo" and "FooBar" both map to
+			"Expenses:FooX" then only the "Foo" rule is needed)
+	"""
+	return_dict={}
+	for p1 in yaml_dict:
+		return_dict[p1]=[]
+		for p2 in yaml_dict:
+			if p1!=p2 and re.search(p1,p2):
+				return_dict[p1].append(p2)
+	return(return_dict)
+
+def best_match(e,pattern,alt_list):
+	""" Finds best match for this pattern given a list of possible all_entries
+		Args: entry, string pattern, and list of alt patterns
+
+		Returns: best_match which is key to assign dict
+				An empty string if no match is found
+	"""
+	best_pattern=""
+	sr=None
+	# try 'payee' part of payee / memo / Check #
+	id_str = e.narration.split(' / ')[0].strip() 
+	sr=re.search(pattern, id_str)
+	if not sr and 'category' in e.meta:
+		sr=re.search(pattern,e.meta['category'])
+	if sr:
+		best_pattern=pattern
+		alt_sr=[]
+		for alt_p in alt_list:
+			alt_sr.append(re.search(alt_p,id_str))
+		spans=[]
+		for r in alt_sr:
+			if r:
+				spans.append(r.span()[1]-r.span()[0])
+			else:
+				spans.append(0)
+		max_span=sr.span()[1]-sr.span()[0]
+		for p,span in zip(alt_list,spans):
+			if span > max_span:
+				best_pattern=p
+				max_span=span
+	
+	return(best_pattern)
+
+def update_posting(e,account):
+	if len(e.postings)!=2:
+		pval=sum([p.units[0] for p in e.postings])
+		pu=e.postings[0].units.currency
+	else:
+		pval= -e.postings[1].units[0]
+		pu = e.postings[1].units.currency
+	units=amount.Amount(-pval,pu)
+	new_posting = Posting(account,units,None,None,None,{})
+	if len(e.postings)!=2: # add additional posting
+		e.postings.append(new_posting)
+	else: # overwrite second posting
+		e.postings[1]=new_posting
+	return
+
+def assign_entry(e, assignLUT, assign_groups):
+	""" Tries to assign an entry to an account using patterns
+		Arguments: 
+			e (entry), 
+			assignLUT (dict of patterns:account),
+			assign_groups: grouping of patterns from least to most complex
+		Returns: True if assigned, False otherwise
+	"""
+	# FIXME: Compile and turn pattern into one long reference
+	assigned = False
+	for pattern in assignLUT:
+		best_pattern = best_match(e, pattern, assign_groups[pattern])
+		if len(best_pattern) > 0:
+			update_posting(e, assignLUT[best_pattern])
+			assigned = True
+			break
+	return(assigned)
+
+def update_unassigned(e, unassigned_payees):
+	""" Updates the unassigned table
+	"""
+	pre_assigned_category="Expenses:"
+	unassigned_payee="EMPTY"
+	if 'category' in e.meta:
+		pre_assigned_category+=e.meta['category']
+		unassigned_payee=e.meta['category']
+	else:
+		pre_assigned_category+="UNASSIGNED"
+	# first is always payee
+	tok=e.narration.split('/')[0].strip() 
+	if len(tok)!=0: # use 1st field of narration 
+		unassigned_payee=tok
+	unassigned_payees[regexify(unassigned_payee)]=pre_assigned_category
+	return
+
+def save_unassigned(unassigned_payees,account_file,ex_file):
+	""" Saves unassigned payees to appended yaml file
+	"""
+	oup=OrderedDict(sorted(unassigned_payees.items()))
+	if len(oup) > 0:
+		with open(os.path.splitext(account_file)[0]+"_unassigned.yaml","a") as f:
+			f.write("# Unassigned accounts for {0}\n".format(ex_file)) 
+			for k in oup:
+				if len(k) < 40:
+					f.write("\""+k+"\"" + ":" + (40-len(k))*" " + oup[k] + "\n")
+				else: # really long key...
+					f.write("\""+k+"\"" + ": " + oup[k] + "\n")
+	return
 
 def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	""" Assigns accounts from payee field and open any new accounts
@@ -156,6 +281,7 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	for ex_file, entries in extracted_entries_list:
 		# links payees/narration to account 
 		assignLUT={}
+		assign_groups={}
 		unassigned_payees={}
 		# default account file name for unassigned
 		account='unknown'
@@ -166,74 +292,23 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 			if os.path.isfile(account_file):
 				with open(account_file,'r') as f:
 					assignLUT=yaml.safe_load(f)
-					assignLUT=OrderedDict(sorted(assignLUT.items()))
+					assign_groups=group_regex(assignLUT)
 		new_entries.append((ex_file,[]))
 		for en,e in enumerate(entries):
 			# check for zero value entries - lots of these in CC's
 			if type(e)==Transaction and len(e.postings)==1 and e.postings[0].units[0]==0 and remove_zero_value_transactions: 
 				continue
 			if type(e)==Transaction and (sum([p.units[0] for p in e.postings])!=D(0) or len(e.postings)==1):
-				assigned=False	
-				# this is where we check for the regex patterns
-				# FIXME: Compile and turn pattern into one long reference
-				contiguous=0
-				for pattern in assignLUT:
-					sr=None
-					try:
-						nsplt=e.narration.split(' / ') 
-						# try 'payee' part of payee / memo / Check #
-						sr=re.search(pattern, nsplt[0])
-						if not sr and 'category' in e.meta:
-							sr=re.search(pattern,e.meta['category'])
-					except Exception as ex:
-						sys.stderr.write("Bad regex: pattern=\"{0}\", narration=\"{1}\", error={2}\n".format(pattern,e.narration,str(ex)))
-					if sr:
-						if len(e.postings)!=2:
-							pval=sum([p.units[0] for p in e.postings])
-							pu=e.postings[0].units.currency
-						else:
-							pval= -e.postings[1].units[0]
-							pu = e.postings[1].units.currency
-						units=amount.Amount(-pval,pu)
-						new_posting = Posting(assignLUT[pattern],units,None,None,None,{})
-						if len(e.postings)!=2: # add additional posting
-							e.postings.append(new_posting)
-						else: # overwrite second posting
-							e.postings[1]=new_posting
-						assigned=True
-						contiguous+=1
-					# found at least one match, then subsequently didn't match
-					# so terminate the rest
-					# if patterns in search order, then longest is assigned
-					if not sr and contiguous > 0: 
-						break
-				if not assigned:
-					pre_assigned_category="Expenses:"
-					sys.stderr.write(str(en)+"\r")
-					unassigned_payee=""
-					if 'category' in e.meta:
-						pre_assigned_category+=e.meta['category']
-						unassigned_payee=e.meta['category']
-					else:
-						pre_assigned_category+="UNASSIGNED"
-					toks=e.narration.split('/') # first is always payee
-					if len(toks[0])!=0: # use 1st field of narration 
-						unassigned_payee=toks[0]
-					unassigned_payees[regexify(unassigned_payee)]=pre_assigned_category
+				if not assign_entry(e,assignLUT,assign_groups):
+					update_unassigned(e,unassigned_payees)
 			if type(e)==Open:
 				if not e.account in opened_accounts:
 					opened_accounts.append(e.account)
-		# unassigned payees - alpha sorted
-		oup=OrderedDict(sorted(unassigned_payees.items()))
-		if len(oup) > 0:
-			sys.stderr.write("Found {0} unassigned accounts for {1} ({2} entries) for file {3}\n".format(len(oup),account,len(entries),ex_file))
-			with open(os.path.splitext(account_file)[0]+"_unassigned.yaml","a") as f:
-				f.write("# Unassigned accounts for {0}\n".format(ex_file)) 
-				for k in oup:
-					if len(k) < 40:
-						f.write("\""+k+"\"" + ":" + (40-len(k))*" " + oup[k] + "\n")
-					else: # really long key...
-						f.write("\""+k+"\"" + ": " + oup[k] + "\n")
+
+		if len(unassigned_payees) > 0:
+			sys.stderr.write("Found {0} unassigned accounts for {1} ({2} entries) for file {3}\n".format(len(unassigned_payees),account,len(entries),ex_file))
+			save_unassigned(unassigned_payees,account_file,ex_file)
+
 		new_entries[-1][1].extend(entries)
 
 	# see what accounts we have

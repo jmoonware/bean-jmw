@@ -10,7 +10,8 @@ from qifparse.parser import QifParser
 
 from datetime import datetime as dt
 
-quicken_category_remove=[' ','\'','&','-','+']
+# remove these chars as Beancount accounts can't have them
+quicken_category_remove=[' ','\'','&','-','+','.']
 
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD'):
