@@ -79,7 +79,11 @@ class Importer(ImporterProtocol):
 					payee_str=qt.payee.strip().replace('/','.')
 					if "CHECK" in qt.payee.upper():
 						check_str="Check"
-				narration_str=" / ".join([payee_str,memo_str,check_str+num_str])
+				n_toks=[payee_str,memo_str,check_str+num_str]
+				 # truly blank
+				if len(''.join(n_toks))==0 and not 'category' in meta:
+					n_toks[0]='EMPTY' # for assigning later
+				narration_str=" / ".join(n_toks)
 				tn=Transaction(
 					meta=meta,
 					date=dt.date(qt.date),
