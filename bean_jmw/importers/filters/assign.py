@@ -298,7 +298,7 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 			# check for zero value entries - lots of these in CC's
 			if type(e)==Transaction and len(e.postings)==1 and e.postings[0].units[0]==0 and remove_zero_value_transactions: 
 				continue
-			if type(e)==Transaction and (sum([p.units[0] for p in e.postings])!=D(0) or len(e.postings)==1):
+			if type(e)==Transaction and (sum([p.units[0] for p in e.postings if p.units and p.units[0]])!=D(0) or len(e.postings)==1):
 				if not assign_entry(e,assignLUT,assign_groups):
 					update_unassigned(e,unassigned_payees)
 			if type(e)==Open:
