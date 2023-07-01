@@ -18,7 +18,7 @@ cd $FINROOT
 git clone https://github.com/jmoonware/bean-jmw
 ```
 
-Create a venv using python 3.9, because beancount needs this, activate this virtual environment, and install bean_jmw via
+Create a venv using python 3.9, because beancount needs this, activate this virtual environment, and install beanjmw via
 
 ```
 python3.9 -m venv avenv
@@ -36,7 +36,7 @@ You need to create an acct.py file in the 'private/downloads' directory. An exam
 When in the 'downloads' directory, use 
 
 ```
-python -m bean_jmw.bci.py [identify|extract|file]
+python -m beanjmw.bci.py [identify|extract|file]
 ```
 
 Use the 'extract' option iteratively: First time through, if a checking account is being ingested, then all the checks with unassigned payees will go to yaml file $FINROOT/private/downloads/yaml/Accountname_payees_unassigned.yaml. See the Wiki for detailed instructions.

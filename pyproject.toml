@@ -1,5 +1,5 @@
 [project]
-name = "bean_jmw"
+name = "beanjmw"
 version = "0.1.0"
 dependencies = [
     "qifparse@git+https://github.com/jmoonware/qifparse",
