@@ -20,9 +20,10 @@ investment_actions={
 'SHORT-TERM CAP GAIN':'CGShort',
 'DIVIDEND RECEIVED':'Div',
 'INTEREST':'IntInc',
-'REINVESTMENT':'Reinv',
+'REINVESTMENT':'Buy',
 'ELECTRONIC FUNDS TRANSFER':'Xout',
 'DIRECT DEBIT':'Xout',
+'MERGER MERGER':'Merger',
 }
 
 default_open_date='2000-01-01'
@@ -87,9 +88,9 @@ class Importer(ImporterProtocol):
 			sys.stderr.write("Unable to open or parse {0}".format(file.name))
 			return(entries)
 		import_table=self.create_table(lines)
-#		securities=self.get_securities() # might need for opens
 		entries = self.get_transactions(import_table)
 
+		# add open directives; some may be removed in dedup
 		open_date=dt.date(dt.fromisoformat(default_open_date))
 		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
 		return(open_entries + entries)
@@ -135,7 +136,13 @@ class Importer(ImporterProtocol):
 	def get_transactions(self,table):
 		entries=[]
 		for fr in map(FidoRow._make,table): 
-			meta={"lineno":0,"filename":self.account_name}
+			# meta={"lineno":0,"filename":self.account_name}
+			meta=new_metadata(self.account_name, 0)
+			# KLUDGE: Fix amounts without decimal point
+			nfr=fr._replace() # make a copy
+			if not '.' in fr.amount:
+				namt = fr.amount+".00"
+				nfr = fr._replace(amount=namt)
 			narration_str=" / ".join([fr.account,fr.action])
 			tn=Transaction(
 				meta=meta,
@@ -145,7 +152,7 @@ class Importer(ImporterProtocol):
 				narration=narration_str,
 				tags=EMPTY_SET,
 				links=EMPTY_SET,
-				postings=self.generate_investment_postings(fr),
+				postings=self.generate_investment_postings(nfr),
 			)
 			entries.append(tn)
 
@@ -170,7 +177,9 @@ class Importer(ImporterProtocol):
 	
 		# set defaults for two generic postings (p0, p1)
 		sec_name=fr.security_description
-		symbol = fr.symbol
+		symbol=self.currency # default to this
+		if len(fr.symbol) > 0:
+			symbol = fr.symbol
 		sec_currency=symbol
 		sec_account=symbol
 		if "CASH" in fr.security_description: # special case
@@ -208,17 +217,26 @@ class Importer(ImporterProtocol):
 	
 		# deal with each type of investment action:
 		if fido_action in ['Buy','ShrsIn']:
+			acct = ":".join([self.account_name, sec_account])
+			meta=new_metadata(acct, 0)
 			amt=Decimal(0)
 			if len(fr.amount)>0:
 				amt=Decimal(fr.amount)
+			qty=Decimal(0.000000001)
+			if fr.quantity:
+				qty=Decimal(fr.quantity)
 			prc=Decimal(0)
 			if len(fr.price)>0:
 				prc=Decimal(fr.price)
-			acct = ":".join([self.account_name, sec_account])
+				tprc=abs(amt/qty)
+				if abs(qty*(tprc-prc)) > 0.0025: # exceeds tolerance
+					meta["rounding"]="Price was {0}".format(prc)
+					prc=tprc
 			postings[0]=p0._replace(
 				account = acct,
 				units=Amount(Decimal(fr.quantity),sec_currency),
 				price = Amount(prc,self.currency),
+				meta = meta,
 			)
 			aname='Cash'
 			# shares in came from a share exchange somewhere else
@@ -226,7 +244,7 @@ class Importer(ImporterProtocol):
 				aname = 'Transfer'
 			postings[1]=p1._replace(
 				account = ":".join([self.account_name,aname]),
-				units = Amount(-amt,self.currency)
+				units = Amount(-abs(amt),self.currency)
 			)
 		elif fido_action=='Sell': 
 			commission=Decimal(0)
@@ -296,25 +314,6 @@ class Importer(ImporterProtocol):
 				account = self.account_name + ":Cash",
 				units = Amount(Decimal(fr.amount),self.currency)
 			)
-		elif fido_action =='Reinv': # ReinvDiv,ReinvLg,ReinvMd,ReinvSh... 
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),sec_account,fido_action]),
-				units=Amount(-Decimal(fr.amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name, sec_account]),
-				units=Amount(Decimal(fr.quantity),sec_currency),
-				cost=Cost(Decimal(fr.price),self.currency,dt.date(dt.strptime(fr.date,'%m/%d/%Y')),""),
-			)
-		elif fido_action=='ReinvInt': 
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name,"IntInc"]),
-				units=Amount(-Decimal(fr.amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name, "Cash"]),
-				units=Amount(Decimal(fr.quantity),sec_currency),
-			)
 		elif fido_action in ['Xin','Xout']: 
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name,"Cash"]),
@@ -322,7 +321,19 @@ class Importer(ImporterProtocol):
 			)
 			postings[1]=p1._replace(
 				account = ":".join([self.account_name, "Transfer"]),
+				units=Amount(-Decimal(fr.amount),sec_currency),
+			)
+		elif fido_action == 'Merger':
+			postings[0]=p0._replace(
+				account = ":".join([self.account_name,"Cash"]),
+				units=Amount(Decimal(fr.amount),self.currency)
+			)
+			meta=new_metadata(self.account_name, 0)
+			meta["FIXME"] = "Posting needs fix?"
+			postings[1]=p1._replace(
+				account = ":".join([self.account_name, "Merger"]),
 				units=Amount(-Decimal(fr.quantity),sec_currency),
+				meta = meta,
 			)
 		elif fido_action=='StkSplit': 
 			pass

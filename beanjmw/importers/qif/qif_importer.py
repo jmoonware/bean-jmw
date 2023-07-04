@@ -347,10 +347,18 @@ class Importer(ImporterProtocol):
 				account = ":".join([account_name.replace('Assets','Income'),sec_account,map_reinv[qt.action]]),
 				units=Amount(-qt.amount,self.currency)
 			)
+			meta = new_metadata(self.account_name, 0)
+			nprc=qt.price
+			if qt.quantity > 0:
+				nprc = abs(qt.amount/qt.quantity)
+				if abs(qt.quantity*(nprc-qt.price)) > 0.0025: # FIXME
+					meta['rounding']="Price was {0}".format(qt.price)
 			postings[1]=p1._replace(
 				account = ":".join([account_name, sec_account]),
 				units=Amount(qt.quantity,sec_currency),
-				cost=Cost(qt.price,self.currency,dt.date(qt.date),""),
+#				cost=Cost(nprc,self.currency,dt.date(qt.date),""),
+				price = Amount(nprc,self.currency),
+				meta=meta,
 			)
 		elif qt.action=='ReinvInt': 
 			postings[0]=p0._replace(
