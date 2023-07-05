@@ -408,14 +408,17 @@ class Importer(ImporterProtocol):
 			)
 		# not an official Qif action but still used...
 		elif qt.action=='Cash':
-			acct="Misc" # might be goodwill, witholding, or some such
+			# might be goodwill, witholding, or some such
+			account = ":".join([account_name.replace("Assets","Income"),"Misc"])
 			if qt.memo and "INTEREST" in qt.memo.upper():
-				acct="IntInc"
+				account = ":".join([account_name.replace("Assets","Income"),"IntInc"])
+			if qt.memo and "TRANSFER" in qt.memo.upper():
+				account = ":".join([account_name,"Transfer"])
 			amt=Decimal('0')
 			if qt.amount:
 				amt=qt.amount
 			postings[0]=p0._replace(
-				account = ":".join([account_name.replace("Assets","Income"),acct]),
+				account = account,
 				units=Amount(-amt,self.currency)
 			)
 			postings[1]=p1._replace(

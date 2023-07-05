@@ -333,7 +333,7 @@ class Importer(ImporterProtocol):
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name,sec_currency]),
 				units=Amount(Decimal(fr.quantity),sec_currency),
-				price = Amount(0,self.currency),
+				price = Amount(Decimal(0),self.currency),
 			)
 			meta=new_metadata(self.account_name, 0)
 			meta["fixme"] = "Posting needs cost basis"
