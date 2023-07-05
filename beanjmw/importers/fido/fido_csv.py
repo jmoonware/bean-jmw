@@ -4,7 +4,7 @@ from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
 
-import os,sys
+import os,sys, re
 
 from datetime import datetime as dt
 
@@ -143,10 +143,14 @@ class Importer(ImporterProtocol):
 			if not '.' in fr.amount:
 				namt = fr.amount+".00"
 				nfr = fr._replace(amount=namt)
+			# KLUDGE: Actual date may be in action!
+			if 'as of' in fr.action:
+				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{4}",fr.action)
+				nfr = nfr._replace(date = dm[0])
 			narration_str=" / ".join([fr.account,fr.action])
 			tn=Transaction(
 				meta=meta,
-				date=dt.date(dt.strptime(fr.date,'%m/%d/%Y')),
+				date=dt.date(dt.strptime(nfr.date,'%m/%d/%Y')),
 				flag="*",
 				payee="Investment",
 				narration=narration_str,
@@ -268,7 +272,7 @@ class Importer(ImporterProtocol):
 				prc=Decimal(fr.price)
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name, sec_account]),
-				units=Amount(-Decimal(fr.quantity),sec_currency),
+				units=Amount(Decimal(fr.quantity),sec_currency),
 		#		cost=None, # let Beancount FIFO booking rule take care
 				price = Amount(prc,self.currency),
 			)
@@ -323,16 +327,19 @@ class Importer(ImporterProtocol):
 				account = ":".join([self.account_name, "Transfer"]),
 				units=Amount(-Decimal(fr.amount),sec_currency),
 			)
+		# Merger just removes or adds shares at 0 cost - basis 
+		# needs to be entered manually (maybe a way to get this?)
 		elif fido_action == 'Merger':
 			postings[0]=p0._replace(
-				account = ":".join([self.account_name,"Cash"]),
-				units=Amount(Decimal(fr.amount),self.currency)
+				account = ":".join([self.account_name,sec_currency]),
+				units=Amount(Decimal(fr.quantity),sec_currency),
+				price = Amount(0,self.currency),
 			)
 			meta=new_metadata(self.account_name, 0)
-			meta["FIXME"] = "Posting needs fix?"
+			meta["fixme"] = "Posting needs cost basis"
 			postings[1]=p1._replace(
 				account = ":".join([self.account_name, "Merger"]),
-				units=Amount(-Decimal(fr.quantity),sec_currency),
+				units=Amount(Decimal(0),self.currency),
 				meta = meta,
 			)
 		elif fido_action=='StkSplit': 

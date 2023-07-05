@@ -406,7 +406,7 @@ def deduplicate(extracted_entries_list,ledger_entries):
 def compare_entries(entries_a,entries_b):
 	""" Compares two lists of entries to see if there are duplicates 
 		Arguments: 
-			entries_b,entries_b: lists of entries to compare
+			entries_a,entries_b: lists of entries to compare
 		Returns:
 			lists of duplicates, one list for each entry in entries_a
 		Notes:
