@@ -1,4 +1,4 @@
-# custom importer to load Fildelity CSV brokerage account history
+# custom importer to load Etrade CSV brokerage account history
 
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
@@ -11,30 +11,37 @@ from datetime import datetime as dt
 # remove these chars as Beancount accounts can't have them
 quicken_category_remove=[' ','\'','&','-','+','.']
 
-# all possible actions for investments
+# ETrade has a more descriptive TransactionType col that doesn't easily map
+# to QIF actions...
+transaction_types={
+'Adjustment', # at zero cost
+'Bought',
+'Direct Debit', 
+'Dividend', # could be LT, ST, etc.
+'Fee',
+'Interest',
+'Other', # appear to be cancelling pairs of share sales/buys
+'Reorganization', # mutual funds changing symbol
+'Sold',
+'Transfer',
+'Wire',
+}
+
+# in the Description field, at least since 2021 
 investment_actions={
-'BUY':'Buy', 
-'YOU BOUGHT':'Buy', 
-'YOU SOLD':'Sell',
-'LONG-TERM CAP GAIN':'CGLong',
-'SHORT-TERM CAP GAIN':'CGShort',
-'DIVIDEND RECEIVED':'Div',
-'INTEREST':'IntInc',
-'REINVESTMENT':'Buy',
-'ELECTRONIC FUNDS TRANSFER':'XOut',
-'DIRECT DEBIT':'XOut',
-'MERGER ':'Merger',
-'DISTRIBUTION':'ShrsIn',
+'L/T CAPITAL GAIN':'CGLong',
+'S/T CAPITAL GAIN':'CGShort',
+'REINVEST':'Buy',
 }
 
 default_open_date='2000-01-01'
 
-fido_cols = ['Run Date', 'Account', 'Action', 'Symbol', 'Security Description', 'Security Type', 'Quantity', 'Price ($)', 'Commission ($)', 'Fees ($)', 'Accrued Interest ($)', 'Amount ($)', 'Settlement Date']
-
-fido_row_fields = ['date', 'account', 'action', 'symbol', 'security_description', 'type', 'quantity', 'price', 'commission', 'fees', 'accrued_interest', 'amount', 'settlement_date']
+etrade_cols = [
+'TransactionDate','TransactionType','SecurityType','Symbol','Quantity','Amount','Price','Commission','Description',
+]
 
 from collections import namedtuple
-FidoRow = namedtuple('FidoRow',fido_row_fields)
+EtradeRow = namedtuple('EtradeRow',etrade_cols)
 
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD'):
@@ -58,16 +65,14 @@ class Importer(ImporterProtocol):
 			found=False
 			ln=0
 			while ln < len(head_lines):
-				if 'Brokerage' in head_lines[ln]:
-					break
+				if 'For Account' in head_lines[ln]:
+					toks=head_lines[ln].split(',')
+					if len(toks) > 1:
+						fa=toks[1]
+						if fa[len(fa)-4:]==self.acct_tail:
+							found=True
+							break
 				ln+=1
-			for l in head_lines[ln+3:]:
-				toks=l.split(',')
-				if len(toks) > 1:
-					fa=toks[1]
-					if fa[len(fa)-4:]==self.acct_tail:
-						found=True
-						break
 			return found
 		else:
 			 return False
@@ -136,24 +141,23 @@ class Importer(ImporterProtocol):
 
 	def get_transactions(self,table):
 		entries=[]
-		for fr in map(FidoRow._make,table): 
-			# meta={"lineno":0,"filename":self.account_name}
+		for fr in map(EtradeRow._make,table): 
 			meta=new_metadata(self.account_name, 0)
 			# KLUDGE: Fix amounts without decimal point
 			nfr=fr._replace() # make a copy
-			if not '.' in fr.amount:
-				namt = fr.amount+".00"
-				nfr = fr._replace(amount=namt)
+			if not '.' in fr.Amount:
+				namt = fr.Amount+".00"
+				nfr = fr._replace(Amount=namt)
 			# KLUDGE: Actual date may be in action!
-			if 'as of' in fr.action:
-				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{4}",fr.action)
-				nfr = nfr._replace(date = dm[0])
-			narration_str=" / ".join([fr.account,fr.action])
+			if 'RECORD' in fr.Description:
+				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{2}",fr.Description)
+				nfr = nfr._replace(TransactionDate = dm[0])
+			narration_str=" / ".join([fr.Description,fr.TransactionType])
 			tn=Transaction(
 				meta=meta,
-				date=dt.date(dt.strptime(nfr.date,'%m/%d/%Y')),
+				date=dt.date(dt.strptime(nfr.TransactionDate,'%m/%d/%y')),
 				flag="*",
-				payee="Investment",
+				payee="Etrade",
 				narration=narration_str,
 				tags=EMPTY_SET,
 				links=EMPTY_SET,
@@ -169,33 +173,27 @@ class Importer(ImporterProtocol):
 		# try to find investment action
 		# switch to use QIF format names
 		# TODO: Re-use code in qif importer
-		fido_action=None
-		for ia in investment_actions:
-			if ia in fr.action.upper(): # found a match
-				fido_action=investment_actions[ia]
-				break
+		etrade_action=None
+		if fr.TransactionType in transaction_types:
+			etrade_action=fr.TransactionType
 
 		# unsure what we should do here so bail
-		if not fido_action:
-			sys.stderr.write("Unknown inv action: {0} in {1}\n".format(fr.action,fr))
+		if not etrade_action:
+			sys.stderr.write("Unknown inv action: {0} in {1}\n".format(fr.TransactionType,fr))
 			return(postings)
 	
 		# set defaults for two generic postings (p0, p1)
-		sec_name=fr.security_description
 		symbol=self.currency # default to this
-		if len(fr.symbol) > 0:
-			symbol = fr.symbol
+		if len(fr.Symbol) > 0 and not '#' in fr.Symbol:
+			symbol = fr.Symbol
 		sec_currency=symbol
 		sec_account=symbol
-		if "CASH" in fr.security_description: # special case
-			sec_account="Cash"
-			sec_currency=self.currency
 		acct = ":".join([self.account_name, sec_account])
 		# open account with this currency
 		self.account_currency[acct]=sec_currency
 		qty = Decimal('0')
-		if len(fr.quantity)>0:
-			qty = Decimal(fr.quantity)
+		if len(fr.Quantity)>0:
+			qty = Decimal(fr.Quantity)
 		postings.append(
 			Posting(
 				account = self.account_name,
@@ -221,40 +219,40 @@ class Importer(ImporterProtocol):
 		p1=postings[1] 
 	
 		# deal with each type of investment action:
-		if fido_action in ['Buy','ShrsIn']:
+		if etrade_action == 'Bought':
 			acct = ":".join([self.account_name, sec_account])
 			meta=new_metadata(acct, 0)
 			amt=Decimal(0)
-			if len(fr.amount)>0:
-				amt=Decimal(fr.amount)
+			if len(fr.Amount)>0:
+				amt=Decimal(fr.Amount)
 			qty=Decimal(0.000000001)
-			if fr.quantity:
-				qty=Decimal(fr.quantity)
+			if fr.Quantity:
+				qty=Decimal(fr.Quantity)
 			prc=Decimal(0)
-			if len(fr.price)>0:
-				prc=Decimal(fr.price)
+			if len(fr.Price)>0:
+				prc=Decimal(fr.Price)
 				tprc=abs(amt/qty)
 				if abs(qty*(tprc-prc)) > 0.0025: # exceeds tolerance
 					meta["rounding"]="Price was {0}".format(prc)
 					prc=tprc
 			postings[0]=p0._replace(
 				account = acct,
-				units=Amount(Decimal(fr.quantity),sec_currency),
+				units=Amount(Decimal(fr.Quantity),sec_currency),
 				price = Amount(prc,self.currency),
 				meta = meta,
 			)
 			aname='Cash'
 			# shares in came from a share exchange somewhere else
-			if fido_action == 'ShrsIn': # KLUDGE
+			if etrade_action == 'ShrsIn': # KLUDGE
 				aname = 'Transfer'
 			postings[1]=p1._replace(
 				account = ":".join([self.account_name,aname]),
 				units = Amount(-abs(amt),self.currency)
 			)
-		elif fido_action=='Sell': 
+		elif etrade_action=='Sold': 
 			commission=Decimal(0)
-			if len(fr.commission)>0:
-				commission=Decimal(fr.commission)
+			if len(fr.Commission)>0:
+				commission=Decimal(fr.Commission)
 				postings.append(
 					Posting(
 						account = self.account_name.replace('Assets','Expenses') + ":Commission",
@@ -266,14 +264,14 @@ class Importer(ImporterProtocol):
 					)
 				)
 			total_cost=commission
-			if len(fr.amount)>0:
-				total_cost=Decimal(fr.amount)+commission
+			if len(fr.Amount)>0:
+				total_cost=Decimal(fr.Amount)+commission
 			prc=Decimal(0)
-			if len(fr.price)>0:
-				prc=Decimal(fr.price)
+			if len(fr.Price)>0:
+				prc=Decimal(fr.Price)
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name, sec_account]),
-				units=Amount(Decimal(fr.quantity),sec_currency),
+				units=Amount(Decimal(fr.Quantity),sec_currency),
 		#		cost=None, # let Beancount FIFO booking rule take care
 				price = Amount(prc,self.currency),
 			)
@@ -292,77 +290,74 @@ class Importer(ImporterProtocol):
 					meta=None,
 				)
 			)
-		elif fido_action in ['Div','CGShort','CGLong','CGMid']:
+		elif etrade_action == 'Dividend':
+			# might be Long, Short, or reinvest
+			etrade_div_action='Div'
+			for tok in investment_actions:
+				if tok in fr.Description:
+					etrade_div_action=investment_actions[tok]	
+			account = ":".join([self.account_name.replace('Assets','Income'),sec_account,etrade_div_action])
+			units=Amount(-Decimal(fr.Amount),self.currency)
+			prc = Decimal(0)
+			if etrade_div_action == 'Buy':
+				account = ":".join([self.account_name,sec_account])
+				units=Amount(Decimal(fr.Quantity),sec_currency)
+				if len(fr.Quantity) > 0:
+					prc = abs(Decimal(fr.Amount)/Decimal(fr.Quantity))
 			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),sec_account,fido_action]),
-				units=Amount(-Decimal(fr.amount),self.currency)
+				account = account,
+				units = units,
+				price = Amount(prc,self.currency),
 			)
 			postings[1]=p1._replace(
 				account = self.account_name + ":Cash",
-				units = Amount(Decimal(fr.amount),self.currency)
+				units = Amount(Decimal(fr.Amount),self.currency)
 			)
-		elif fido_action in ['IntInc','MiscInc']:
+		elif etrade_action == 'Interest':
 			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),fido_action]),
-				units=Amount(-Decimal(fr.amount),self.currency)
+				account = ":".join([self.account_name.replace('Assets','Income'),etrade_action]),
+				units=Amount(-Decimal(fr.Amount),self.currency)
 			)
 			postings[1]=p1._replace(
 				account = self.account_name + ":Cash",
-				units = Amount(Decimal(fr.amount),self.currency)
+				units = Amount(Decimal(fr.Amount),self.currency)
 			)
-		elif fido_action in ['MiscExp']:
+		elif etrade_action == 'Fee':
 			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Expenses'),fido_action]),
-				units=Amount(-Decimal(fr.amount),self.currency)
+				account = ":".join([self.account_name.replace('Assets','Expenses'),etrade_action]),
+				units=Amount(-Decimal(fr.Amount),self.currency)
 			)
 			postings[1]=p1._replace(
 				account = self.account_name + ":Cash",
-				units = Amount(Decimal(fr.amount),self.currency)
+				units = Amount(Decimal(fr.Amount),self.currency)
 			)
-		elif fido_action in ['XIin','XOut']: 
+		elif etrade_action in ['Transfer','Wire','Direct Debit']: 
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name,"Cash"]),
-				units=Amount(Decimal(fr.amount),self.currency)
+				units=Amount(Decimal(fr.Amount),self.currency)
 			)
 			postings[1]=p1._replace(
 				account = ":".join([self.account_name, "Transfer"]),
-				units=Amount(-Decimal(fr.amount),sec_currency),
+				units=Amount(-Decimal(fr.Amount),sec_currency),
 			)
-		# Merger just removes or adds shares at 0 cost - basis 
+		# Adjustment just removes or adds shares at 0 cost - basis 
 		# needs to be entered manually (maybe a way to get this?)
-		elif fido_action == 'Merger':
+		elif etrade_action in ['Adjustment','Other','Reorganization']:
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name,sec_currency]),
-				units=Amount(Decimal(fr.quantity),sec_currency),
+				units=Amount(Decimal(fr.Quantity),sec_currency),
 				price = Amount(Decimal(0),self.currency),
 			)
 			meta=new_metadata(self.account_name, 0)
-			meta["fixme"] = "Posting needs cost basis"
+			meta["fixme"] = "Posting may need cost basis"
 			postings[1]=p1._replace(
-				account = ":".join([self.account_name, "Merger"]),
+				account = ":".join([self.account_name, "Adjustment"]),
 				units=Amount(Decimal(0),self.currency),
 				price = Amount(Decimal(0),self.currency),
 				meta = meta,
 			)
-		elif fido_action=='StkSplit': 
-			pass
-		# just remove shares - manually fix where they go later!
-		# looks like sale for transfer between e.g. share classes 
-		elif fido_action=='ShrsOut': 
-			# FIXME
-			amt = Decimal('0') # Decimal(fr.amount) is empty!
-			price = Decimal('0')
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name, sec_account]),
-				units=Amount(-Decimal(fr.quantity),sec_currency),
-				cost=Cost(price,self.currency,dt.date(dt.strptime(fr.date,'%m/%d/%Y')),""),
-			)
-			postings[1]=p1._replace(
-				account = self.account_name + ":FIXME",
-				units = Amount(amt,self.currency)
-			)
 		else:
-			sys.stderr.write("Unknown investment action {0}\n".format(fido_action))
+			sys.stderr.write("Unknown investment action {0}\n".format(etrade_action))
 	
 		return(postings)
 
@@ -370,35 +365,34 @@ class Importer(ImporterProtocol):
 	def create_table(self,lines):
 		""" Returns a list of (mostly) unparsed string tokens
 	        each item in the table is a list of tokens exactly 
-			len(fido_row_fields) long
+			len(etrade_cols) long
 			Arguments:
 				lines: list of raw lines from csv file
 		"""
 		table=[]
 		nl=0
 		while nl < len(lines):
-			if "Brokerage" in lines[nl]:
+			if "TransactionDate" in lines[nl]:
 				break
 			nl+=1
 
 		# make sure the columns haven't changed... 
-		is_fido=True
-		cols=[c.strip() for c in lines[nl+2].split(',')]
-		for c,fc in zip(cols,fido_cols):
+		is_etrade=True
+		cols=[c.strip() for c in lines[nl].split(',')]
+		for c,fc in zip(cols,etrade_cols):
 			if c!=fc:
-				is_fido=False
+				is_etrade=False
 				break
-		if not is_fido or len(cols)!=len(fido_cols):
+		if not is_etrade or len(cols)!=len(etrade_cols):
 			sys.stderr.write("Bad format {0}".format(cols))
 			return(table)
 	
 		# it's got the right columns, now extract the data	
-		for l in lines[nl+3:]:
+		for l in lines[nl+1:]:
 			ctoks=l.split(',')
-			if len(ctoks) >= len(fido_cols):
-				if ctoks[1][len(ctoks[1])-4:]==self.acct_tail:
-					# remove double quotes
-					sctoks=[c.strip().replace('"','') for c in ctoks]
-					table.append(sctoks[:len(fido_row_fields)])
+			if len(ctoks) > 0 and len(ctoks[0])==0: # filter blank date
+				continue
+			if len(ctoks) >= len(etrade_cols):
+				table.append(ctoks[:len(etrade_cols)])
 
 		return(table)

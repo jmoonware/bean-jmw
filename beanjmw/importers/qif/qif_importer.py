@@ -193,10 +193,10 @@ class Importer(ImporterProtocol):
 		sec_name="UNKNOWN"
 		if qt.security:
 			sec_name=qt.security
-		symbol = [s.symbol for s in security_list if s.name == qt.security]
+		symbol = [s.symbol for s in security_list if s.name and s.name == qt.security]
 		sec_currency="UNKNOWN"
 		sec_account="UNKNOWN"
-		if len(symbol) > 0:
+		if len(symbol) > 0 and symbol[0]:
 			sec_currency=symbol[0] # should only be one
 			sec_account=symbol[0] # same as currency, except for Cash
 			acct = ":".join([account_name, sec_account])
@@ -246,17 +246,25 @@ class Importer(ImporterProtocol):
 			prc=Decimal(0)
 			if qt.price:
 				prc=qt.price
+			nprc=prc
 			acct = ":".join([account_name, sec_account])
+			meta = new_metadata(acct,0)
+			if qt.quantity > 0:
+				nprc = abs(amt/qt.quantity)
+				if abs(qt.quantity*(nprc-prc)) > 0.0025: # FIXME
+					meta['rounding']="Price was {0}".format(prc)
 			postings[0]=p0._replace(
 				account = acct,
 				units=Amount(qt.quantity,sec_currency),
 #				cost=Cost(qt.price,self.currency,dt.date(qt.date),""),
-				price = Amount(prc,self.currency),
+				price = Amount(nprc,self.currency),
+				meta = meta,
 			)
 			aname='Cash'
 			# shares in came from a share exchange somewhere else
 			if qt.action == 'ShrsIn': # KLUDGE
-				aname = 'Transfer'
+				if qt.memo and "TRANSFER" in qt.memo.upper():
+					aname = 'Transfer'
 			postings[1]=p1._replace(
 				account = ":".join([account_name,aname]),
 				units = Amount(-amt,self.currency)
@@ -373,8 +381,20 @@ class Importer(ImporterProtocol):
 			pass
 		elif qt.action=='Reprice': 
 			pass
-		elif qt.action=='XIn': 
-			pass
+		elif qt.action in ['XIn','XOut']: # Cash in or out
+			amt = Decimal('0') # qt.amount may be empty!
+			if qt.amount:
+				amt = qt.amount
+			if qt.action=='XOut':
+				amt = -amt
+			postings[0]=p0._replace(
+				account = ":".join([account_name, "Cash"]),
+				units=Amount(amt,self.currency),
+			)
+			postings[1]=p1._replace(
+				account = ":".join([account_name,"Transfer"]),
+				units = Amount(-amt,self.currency)
+			)
 		elif qt.action=='XOut': 
 			pass
 		elif qt.action=='MiscExpX': 
@@ -394,37 +414,38 @@ class Importer(ImporterProtocol):
 		# just remove shares - manually fix where they go later!
 		# looks like sale for transfer between e.g. share classes 
 		elif qt.action=='ShrsOut': 
-			# FIXME
-			amt = Decimal('0') # qt.amount is empty!
+			amt = Decimal('0') # qt.amount may be empty!
+			if qt.amount:
+				amt = qt.amount
 			price = Decimal('0')
+			if qt.price:
+				price = qt.price
 			postings[0]=p0._replace(
 				account = ":".join([account_name, sec_account]),
 				units=Amount(-qt.quantity,sec_currency),
-				cost=Cost(price,self.currency,dt.date(qt.date),""),
+#				cost=Cost(price,self.currency,dt.date(qt.date),""),
+				price = Amount(price,self.currency),
 			)
+			if qt.memo and "TRANSFER" in qt.memo.upper():
+				acct="Transfer"
+			else:
+				acct="Cash"
 			postings[1]=p1._replace(
-				account = account_name + ":FIXME",
+				account = ":".join([account_name,acct]),
 				units = Amount(amt,self.currency)
 			)
 		# not an official Qif action but still used...
 		elif qt.action=='Cash':
 			# might be goodwill, witholding, or some such
-			account = ":".join([account_name.replace("Assets","Income"),"Misc"])
-			if qt.memo and "INTEREST" in qt.memo.upper():
-				account = ":".join([account_name.replace("Assets","Income"),"IntInc"])
-			if qt.memo and "TRANSFER" in qt.memo.upper():
-				account = ":".join([account_name,"Transfer"])
-			amt=Decimal('0')
+			# let regex assignment fill in later
+			amt=Decimal(0)
 			if qt.amount:
 				amt=qt.amount
 			postings[0]=p0._replace(
-				account = account,
-				units=Amount(-amt,self.currency)
-			)
-			postings[1]=p1._replace(
 				account = account_name + ":Cash",
 				units = Amount(amt,self.currency)
 			)
+			postings.remove(p1)
 		else:
 			sys.stderr.write("Unknown QIF investment action {0}\n".format(qt.action))
 	

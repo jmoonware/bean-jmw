@@ -378,7 +378,12 @@ def deduplicate(extracted_entries_list,ledger_entries):
 				ne=e._replace(meta={"mark":"Duplicate"})
 #				sys.stderr.write("Found dup: {0} {1}\n".format(ne,d))
 				if type(ne)==Transaction:
-					ident="Transaction: " + ne.narration
+					acct="Empty"
+					units="Empty"
+					if ne.postings and len(ne.postings) > 0:
+						acct = ne.postings[0].account
+						units=str(ne.postings[0].units)
+					ident= acct + " " + units + " " + ne.narration
 				elif type(ne)==Open:
 					ident="Open: " + ne.account
 				elif type(ne)==Balance:
