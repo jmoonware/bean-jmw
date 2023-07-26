@@ -73,8 +73,8 @@ def assign_check_payees(extracted_entries,account,filename=""):
 									amt = e.postings[0].units
 								unassigned_checks[cn]=missing_payee_tag + " # " + e.date.isoformat()+","+str(amt)
 				# FIXME: special case for some banks
-				elif re.match("CHECK$",e.narration.upper()):
-					new_entry=e._replace(narration="COUNTER CASH")
+			elif re.match("CHECK$",e.narration.upper()):
+				new_entry=e._replace(narration="COUNTER CASH")
 		new_entries.append(new_entry)
 	# track unassigned checks
 	if len(unassigned_checks) > 0:

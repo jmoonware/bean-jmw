@@ -19,6 +19,8 @@ ap.add_argument("--invert","-iv",required=False,help='Organize by account, not r
 
 clargs=ap.parse_args(sys.argv[1:])
 
+replace_chars=["'"]
+
 # loads a dict of possible in-line comments in the existing file
 # these contain date, amount info for unassigned transactions
 def load_comments(f):
@@ -75,7 +77,7 @@ if n_int/len(sorted_entries) > 0.99: # all integers
 	quotes=""
 else:
 	col_width=40
-	quotes="\""
+	quotes="\'"
 
 # override value if set on command line
 if clargs.column_width!=0:
@@ -117,7 +119,7 @@ if clargs.invert:
 	for k,v in sorted_by_account.items():
 		print(k+":")
 		for vi in v:
-			print(" - "+"\""+vi+"\"")
+			print(" - " + quotes + vi + quotes)
 
 else:
 	# output combined, sorted, possibly simplified items, preserving comments
@@ -126,6 +128,10 @@ else:
 		comment=""
 		if k in comments_dict and v=="UNASSIGNED":
 			comment=' # '+comments_dict[k]
-		s_out = quotes + str(k) + quotes + ":" + " "*nspace + v + comment
+		fk=k
+		if type(k) == str:
+			for rc in replace_chars:
+				fk=fk.replace(rc,".")
+		s_out = quotes + str(fk) + quotes + ":" + " "*nspace + v + comment
 		print(s_out)
 
