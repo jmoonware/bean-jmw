@@ -14,12 +14,13 @@ from collections import namedtuple
 
 # for report_config file
 report_config_default = 'bcr.tsv'
-reportFields=['account','include','months','summarize']
+reportFields=['account','include','months','taxfed','taxstate']
 report_currency='USD'
 ReportElement=namedtuple('ReportElement',reportFields) 
 
 # one of these at a time
 top_level=['Assets','Liabilities','Income','Expenses']
+print_totals=False # turn on for expenses by default
 
 ap=argparse.ArgumentParser()
 ap.add_argument('-f','--filename',required=True,help='Beancount ledger file')
@@ -31,6 +32,7 @@ ap.add_argument('-a','--account',required=False,help='Account regex for reportin
 ap.add_argument('-rc','--report_config',required=False,help='Report tsv config file',default=report_config_default)
 ap.add_argument('-c','--currency',required=False,help='Report in this currency (default USD)',default=report_currency)
 ap.add_argument('-pl','--print_ledger',required=False,action='store_true',default=False,help='Print ledger entries for this filter')
+ap.add_argument('-pt','--print_totals',required=False,action='store_true',default=False,help='Print grand totals by currency at end (useful for Expenses)')
 ap.add_argument('-z','--zero_entries',required=False,action='store_true',default=False,help='Print results that sum to 0, otherwise suppress')
 ap.add_argument('-ma','--monthly_ave',required=False,action='store_true',default=False,help='Average by month based on start, end dates')
 ap.add_argument('-dt','--details',required=False,action='store_true',default=False,help='Print subtotals, number of entries, and average months for each top-level entry')
@@ -64,6 +66,21 @@ if pargs.monthly_ave:
 else:
 	months_ave=1
 
+# make a dict of open accounts in ledger
+account_keys=[e.account for e in entries if type(e)==Open]
+account_keys.sort()
+
+def save_config(path,report_elements):
+	accts = [e.account for e in report_accounts]
+	idx = np.argsort(accts)
+	sorted_re = [report_elements[i] for i in idx]
+	max_len = max([int(len(e.account)) for e in report_accounts])
+	with open(path,'w') as f:
+		fmt='{0:<'+str(max_len)+'s}\t{1}\t{2}\t{3}\t{4}\n'
+		for e in sorted_re:
+			f.write(fmt.format(e.account,e.include,e.months,e.taxfed,e.taxstate))
+	return(sorted_re)
+
 # config file is tsv columns, with columns defined by ReportElement fields
 if pargs.report_config and os.path.isfile(pargs.report_config):
 	sys.stderr.write("Reading config {0}...\n".format(pargs.report_config))
@@ -78,27 +95,31 @@ if pargs.report_config and os.path.isfile(pargs.report_config):
 			else:
 				table.append([x.strip() for x in ls.split('\t')])
 
+	config_accounts=set()
 	for e in map(ReportElement._make,table):
 		report_accounts.append(e)
-	sys.stderr.write("{0} accounts in {1}\n".format(len(report_accounts),pargs.report_config))
+		config_accounts.add(report_accounts[-1].account)
+
+	# now check for new accounts in ledger
+	num_config=len(report_accounts)
+	for le in account_keys:
+		if not le in config_accounts:
+			report_accounts.append(ReportElement(le,'y',0,'y'))
+	if len(report_accounts) > num_config: # new accounts found 
+		report_accounts = save_config(pargs.report_config,report_accounts)
+	sys.stderr.write("{0} accounts ({1} new) in {2}\n".format(len(report_accounts),len(report_accounts)-num_config,pargs.report_config))
 else:
-	# report on all accounts by default
-	account_keys=[e.account for e in entries if type(e)==Open]
-	account_keys.sort()
+	# report on all accounts by default, already sorted above
 	for k in account_keys:
-		report_accounts.append(ReportElement(account=k,include='y',months=0,summarize='n'))
+		report_accounts.append(ReportElement(k,'y',0,'y','y'))
 	# now save a copy
-	max_account_len = int(max([len(e.account) for e in report_accounts]))
 	if os.path.isfile(report_config_default) and not pargs.clobber:
 		sys.stderr.write("{} exists - use -clobber option to overwrite\n".format(report_config_default))
 	else:
-		with open(report_config_default,'w') as f:
-			fmt='{0:<'+str(max_account_len)+'s}\t{1}\t{2}\t{3}\n'
-			for e in report_accounts:
-				f.write(fmt.format(e.account,e.include,e.months,e.summarize))
+		report_accounts = save_config(report_config_default,report_accounts)
 
-level=int(pargs.level) # second token in a:b:... format split on :
-# NOTE: Assumes accounts are in sort order!
+level=int(pargs.level) # level'th token in a:b:... format split on :
+# take out excluded accounts 
 filtered_report_accounts=[e for e in report_accounts if re.match(pargs.type,e.account) and str(e.include).upper()=='Y']
 report_account_names=[e.account for e in filtered_report_accounts]
 toks=[e.account.split(':') for e in filtered_report_accounts]
@@ -109,13 +130,14 @@ max_account_len = max([len(e.account) for e in filtered_report_accounts])
 report_groups={}
 ci=0
 while ci < len(toks):
-	if level >= len(toks[ci]):
-		sys.stderr.write("Warning: Level {0} exceeds depth of {1}\n".format(level,':'.join(toks[ci])))
-		level=len(toks[ci])-1
-	if toks[ci][level] == 'US': # don't group by country
-		tlevel=level+1
+	clevel=level
+	if clevel >= len(toks[ci]):
+		sys.stderr.write("Warning: Level {0} exceeds depth of {1}\n".format(clevel,':'.join(toks[ci])))
+		clevel=len(toks[ci])-1
+	if toks[ci][clevel] == 'US': # don't group by country
+		tlevel=clevel+1
 	else:
-		tlevel=level
+		tlevel=clevel
 	g=toks[ci][tlevel] # current group name
 	if not g in report_groups:
 		report_groups[g]=[]
@@ -163,6 +185,7 @@ for k in report_groups:
 
 tot={}
 dfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}'
+print("Account\tUnits\tCurrency")
 for a in report_table:
 	v=report_table[a][0]
 	for currency in v: 
@@ -170,15 +193,17 @@ for a in report_table:
 			tot[currency]=0.
 		tot[currency]+=v[currency]
 		if v[currency]!=0 or pargs.zero_entries:  
-			print("{0}\t{1:.2f} {2}".format(a,v[currency],currency))
+			print("{0}\t{1:.2f}\t{2}".format(a,v[currency],currency))
 			if pargs.details:
 				for st in report_table[a][1]:
 					print(dfmt.format(st[0],st[1],st[2],st[3]))
-for c in tot:
-	print("\nTOTAL {0}\t{1:.2f}".format(c,tot[c]))
+
+if pargs.print_totals:
+	for c in tot:
+		print("\nTOTAL {0}\t{1:.2f}".format(c,tot[c]))
 
 
-# print out legder entries if asked
+# print out ledger entries if asked
 if pargs.print_ledger: 
 	cols={'date':0,'narration':1,'account':2,'position':3}
 	qs="SELECT "+','.join(cols.keys())+" FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}' ORDER BY account,date".format(pargs.start_date,pargs.end_date,pargs.account)
