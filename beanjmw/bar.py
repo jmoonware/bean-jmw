@@ -16,8 +16,12 @@ import sys
 
 ap=argparse.ArgumentParser()
 ap.add_argument('-f','--filename',required=True,help='Assets (tsv, Account,Units,Currency columns')
+ap.add_argument('-af','--advisor_fee',required=False,help='Fee for AUM (for an advisor, default 0',default=0)
+ap.add_argument('-tc','--top_holding_cutoff',required=False,help='Perc cutoff for by holding table (default 75)',default=75)
 
 pargs=ap.parse_args(sys.argv[1:])
+
+yrs_held=7 # years for sales load to amortize
 
 # at least two columns present, 'Units' and 'Currency'
 holdings=pd.read_csv(pargs.filename,sep='\t')
@@ -62,7 +66,7 @@ for acct, symbol,units in zip(holdings['Account'], holdings['Currency'],holdings
 ba_tot=sum([v for v in by_account.values()])
 acct_len=max([int(len(k)) for k in by_account])
 fmt="{0:<"+str(acct_len)+"s}\t{1:8.2f}\t{2:3.2f}"
-print('\t'.join(['Account','Total$','Total%']))
+print('\n'+'\t'.join(['Account','Total$','Total%']))
 for ba in by_account:
 	print(fmt.format(ba,by_account[ba],100*by_account[ba]/ba_tot))
 
@@ -70,11 +74,15 @@ basic_info={'Stocks':0,'Bonds':0,'Cash':0}
 
 # normalization
 gt=0
+gt_AUM=0 # under advisor fee
 s_tot=[]
 h_tot=[]
 
 for s in symbol_info:
 	gt+=symbol_info[s]['TOTAL']
+	# FIXME: Assumes all non-cash is subject to advisor fee
+	if s!='USD': 
+		gt_AUM+=symbol_info[s]['TOTAL']
 	if 'Sector Weightings (%)' in symbol_info[s]['YF_TABLES']:
 		sw=symbol_info[s]['YF_TABLES']['Sector Weightings (%)'].values()
 		s_tot.append(sum([float(v.replace('%','')) for v in sw if v!='N/A']))
@@ -109,7 +117,7 @@ for s in symbol_info:
 
 # print(basic_info)
 bi_tot=sum([v for v in basic_info.values()])
-print('\t'.join(['Class','Total$','Total%']))
+print('\n'+'\t'.join(['Class','Total$','Total%']))
 for bi in basic_info:
 	print("{0:7<s}\t{1:8.2f}\t{2:3.2f}".format(bi,basic_info[bi],100*basic_info[bi]/bi_tot))
 
@@ -132,7 +140,7 @@ w_ER=0
 w_SL=0
 w_DL=0
 
-print('\t'.join(['Total$','Total%','Div','ER','SL','DL','CAT']))
+print('\n'+'\t'.join(['Symbol','Total$','Total%','Div','ER','SL','DL','CAT','TYPE']))
 
 for s in symbol_highlow:
 	cols=[]
@@ -154,7 +162,7 @@ for s in symbol_highlow:
 		cols.append(symbol_info[s]['QUOTE_TYPE'])
 	print('\t'.join(cols))
 
-print('\t'.join(['Info','Value']))
+print('\n'+'\t'.join(['Info','Value']))
 
 print("Grand Total\t{:9.2f}".format(gt))
 print("Weighted Div\t{:9.2f}".format(w_DIV))
@@ -164,6 +172,17 @@ print("Weighted DL\t{:9.2f}".format(w_DL))
 print("4% Rule Monthly\t{:9.2f}".format(gt*0.04/12))
 print("3% Rule Monthly\t{:9.2f}".format(0.03*gt/12))
 print("2% Rule Monthly\t{:9.2f}".format(0.02*gt/12))
+print("Est Annual Div (pre-tax)\t{:9.2f}".format(gt*w_DIV*0.01))
+
+by_fees={}
+by_fees['Est Annual Advisor Fee']=0.01*gt_AUM*float(pargs.advisor_fee)
+by_fees['Est Annual Sales Load']=0.01*gt*w_SL/yrs_held
+by_fees['Est Annual Expense Ratio']=0.01*gt*w_ER
+
+print("\nFee breakdown:")
+for f in by_fees:
+	print("{0}\t{1:9.2f}".format(f,by_fees[f]))
+print("Total Monthly Fees\t{0:7.2f}".format(sum([v for v in by_fees.values()])/12.))
 
 # plot by sector
 
@@ -187,6 +206,7 @@ for s in symbol_highlow:
 kidx = np.argsort([v for v in by_sector.values()])[::-1]
 sector_highlow = np.array([k for k in by_sector.keys()])[kidx]
 
+print('\n'+'Sector\tPercent')
 flen = max([len(x) for x in sector_highlow])
 fmt = "{0:<"+str(flen+1)+"}\t{1:3.2f}"
 for s in sector_highlow:
@@ -219,10 +239,14 @@ holding_highlow = np.array([k for k in by_holding.keys()])[kidx]
 flen = max([len(x) for x in holding_highlow])
 fmt = "{0:<"+str(flen+1)+"}\t{1:3.4f}"
 cumulative=0
+print('\n'+"Instrument\tHolding%")
+n_top=0
 for s in holding_highlow:
 	print(fmt.format(s,by_holding[s]))	
 	cumulative+=by_holding[s]
-	if cumulative > 50:
+	n_top+=1
+	if cumulative > float(pargs.top_holding_cutoff):
 		break
+print(fmt.format("Remainder({0})".format(int(len(holding_highlow))-n_top),100-cumulative))
 
-print(sum([v for v in by_holding.values()]))
+print("\nPercent Total Holdings\t{0:3.2f} ({1} in top {2:3.1f}%)".format(sum([v for v in by_holding.values()]),n_top,float(pargs.top_holding_cutoff)))
