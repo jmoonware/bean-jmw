@@ -281,8 +281,16 @@ def get_info_table(symbol, yf_ticker):
 
 	return(summary_table)
 
-def quote(tk):
-	start_date=dt.date(dt.now()-timedelta(days=5)).isoformat()
+cache_timeout_days=3
+def quote(symbol,tk):
+	info_table = check_cache(symbol)
+	if len(info_table) > 0 and 'QUOTE' in info_table and 'QUOTE_DATE' in info_table:
+		return(info_table['QUOTE'],info_table['QUOTE_DATE'])
+
+	# either expired cache or no info
+	start_date=dt.date(dt.now()-timedelta(days=cache_timeout_days)).isoformat()
+	if not tk:
+		tk = yf.ticker.Ticker(symbol)
 	df=tk.history(start=start_date)
 	qt=0
 	if len(df) > 0 and 'Close' in df.columns:
@@ -290,9 +298,7 @@ def quote(tk):
 		qd = df.index[-1]
 	return(qt,qd)
 
-# call this function on each symbol in portfolio
-cache_timeout_days=3
-def get_all(symbol):
+def check_cache(symbol):
 	yaml_file=symbol+'.yaml'
 	info_table={}
 	if os.path.isfile(yaml_file):
@@ -304,14 +310,21 @@ def get_all(symbol):
 		tzi=tz('US/Pacific')
 		right_now=tzi.localize(dt.now())
 		if right_now-timedelta(days=cache_timeout_days) < last_quote_time:
-			print("Returning cache info for {}...".format(symbol))
-			return(info_table)
+			sys.stderr.write("Returning cache info for {}...\n".format(symbol))
+	return(info_table)
+
+# call this function on each symbol in portfolio
+def get_all(symbol):
+
+	info_table = check_cache(symbol)
+	if len(info_table) > 0:
+		return(info_table)
 
 	# if we got here, have to reload information
-	print("Gathering info for {}...".format(symbol))
+	sys.stderr.write("Gathering info for {}...\n".format(symbol))
 	tk = yf.ticker.Ticker(symbol)
 	info_table = get_info_table(symbol, tk)
-	latest_quote=quote(tk)
+	latest_quote=quote(symbol,tk)
 	info_table['QUOTE_DATE']=latest_quote[1].isoformat()
 	info_table['QUOTE']=latest_quote[0]
 	info_table['HOLDINGS']=get_holdings_table(symbol, tk)

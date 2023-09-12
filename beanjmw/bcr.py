@@ -11,11 +11,20 @@ from datetime import timedelta
 from beancount.core.data import Open, Amount, Decimal
 import numpy as np
 from collections import namedtuple
+import matplotlib.pyplot as plt
+from . import dissect as ds
+
+report_currency='USD'
+def convert_currency(symbol,units):
+	res = units
+	if symbol!=report_currency:
+		val,qd=ds.quote(symbol, None)
+		res = val*units
+	return(res)
 
 # for report_config file
 report_config_default = 'bcr.tsv'
 reportFields=['account','include','months','taxfed','taxstate']
-report_currency='USD'
 ReportElement=namedtuple('ReportElement',reportFields) 
 
 # one of these at a time
@@ -37,6 +46,7 @@ ap.add_argument('-z','--zero_entries',required=False,action='store_true',default
 ap.add_argument('-ma','--monthly_ave',required=False,action='store_true',default=False,help='Average by month based on start, end dates')
 ap.add_argument('-dt','--details',required=False,action='store_true',default=False,help='Print subtotals, number of entries, and average months for each top-level entry')
 ap.add_argument('-cl','--clobber',required=False,action='store_true',default=False,help='Overwrite default config file if set')
+ap.add_argument('-html','--html',required=False,action='store_true',default=False,help='Output in static html')
 
 pargs=ap.parse_args(sys.argv[1:])
 
@@ -155,6 +165,7 @@ report_table={}
 
 for k in report_groups:
 	v={} # by currency
+	v_rc={} # everything converted to the report currency
 	currency = ''
 	details=[]
 	for a in report_groups[k]:
@@ -163,45 +174,119 @@ for k in report_groups:
 		if ma <=0:
 			ma = months_ave # default value
 		if a in query_results and query_results[a]:
+			# get the Inventory...
+			# since this is a sum there should be only 1 position
 			positions=query_results[a][0].get_positions()
 			if len(positions) > 1:
 				sys.stderr.write("Warning: multiple positions in {0}\n".format(query_results[a]))
 			if len(positions) == 0:
 				sys.stderr.write("Warning: no positions in {0} for {1}\n".format(query_results[a],a))
-				first_position=(Amount(Decimal('0'),'USD'),None)
+				first_position=(Amount(Decimal('0'),report_currency),None)
 			else:
 				first_position=positions[0]
 			amount = first_position[0] 
 			currency=amount[1]
 			if not currency in v:
 				v[currency]=0.
+			if not currency in v_rc:
+				v_rc[currency]=0.
 			if amount[0]:
-				res = float(amount[0])/ma
+				res = abs(float(amount[0])/ma)
+				res_rc = convert_currency(currency, res)
 			else:
 				res=0.
-			details.append((a,res,ma,query_results[a][1]))
+				res_rc=0.
+			details.append((a,res,ma,query_results[a][1],res_rc))
 			v[currency]+=res
-	report_table[k]=(v, details)
+			v_rc[currency]+=res_rc
+	report_table[k]=(v, v_rc, details)
+
+print_doc=[]
+if pargs.html:
+	print_doc.append("<!DOCTYPE html>")
+	print_doc.append("<html>")
+	print_doc.append("<head><style>")
+	print_doc.append("table {")
+	print_doc.append("font-family: arial, sans-serif;")
+	print_doc.append("border-collapse: collapse;")
+	print_doc.append("}")
+	print_doc.append("th, td {")
+	print_doc.append("  border: 1px #dddddd;")
+	print_doc.append("  text-align: right;")
+	print_doc.append("  padding: 8px;")
+	print_doc.append("}")
+	print_doc.append("</style></head>")
+	print_doc.append("<body>")
+	dfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2:.2f}</td><td>{3}</td></tr><td>{4:1.2f}</td></tr>'
+	tfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2}</td><td>{3:.2f}</td></tr>'
+	print_doc.append("<h1>{0} Report {1}</h1>".format(pargs.type,dt.date(dt.now()).isoformat()))
+	print_doc.append("<h2>Period from {0} to {1}</h2>".format(pargs.start_date,pargs.end_date))
+	if pargs.monthly_ave:
+		print_doc.append("<h2>Average Per Month</h2>")
+	print_doc.append("<table>")
+	print_doc.append("<tr>")
+	print_doc.append("<td>")
+	print_doc.append("<table>")
+	print_doc.append("<tr><th>Account</th><th>Units</th><th>Currency</th><th>{}</th></tr>".format(report_currency))
+else:
+	dfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}\t{4:7.2f}'
+	tfmt='{0}\t{1:.2f}\t{2}\t{3:.2f}'
+	print_doc.append("Account\tUnits\tCurrency\t{}".format(report_currency))
 
 tot={}
-dfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}'
-print("Account\tUnits\tCurrency")
+plot_labels=[]
+plot_values=[]
 for a in report_table:
 	v=report_table[a][0]
+	v_rc=report_table[a][1]
 	for currency in v: 
 		if not currency in tot:
 			tot[currency]=0.
-		tot[currency]+=v[currency]
-		if v[currency]!=0 or pargs.zero_entries:  
-			print("{0}\t{1:.2f}\t{2}".format(a,v[currency],currency))
-			if pargs.details:
-				for st in report_table[a][1]:
-					print(dfmt.format(st[0],st[1],st[2],st[3]))
+		tot[currency]+=v_rc[currency]
+		if v[currency]!=0 or pargs.zero_entries:
+			if currency!=report_currency: 
+				plot_labels.append(':'.join([a,currency]))
+			else:
+				plot_labels.append(a)
+			plot_values.append(v_rc[currency])
+			print_doc.append(tfmt.format(a,v[currency],currency,v_rc[currency]))
+	if pargs.details:
+		for st in report_table[a][2]:
+			print_doc.append(dfmt.format(st[0],st[1],st[2],st[3],st[4]))
+
+if pargs.html:
+	print_doc.append("</table>")
+	print_doc.append("</td>")
+
+fig, ax = plt.subplots()
+fig.set_size_inches(5,9)
+idx = np.argsort(plot_values)[::-1]
+if pargs.type=='Assets':
+	mult=1e-3
+	x_tag=' k'
+else:
+	mult=1
+	x_tag=''
+ax.barh(range(len(plot_values)),mult*np.array(plot_values)[idx])
+ax.set_yticks(range(len(plot_values)),labels=np.array(plot_labels)[idx])
+ax.invert_yaxis()
+ax.set_xlabel("Value ({0}{1}) ".format(report_currency,x_tag))
+ax.set_title("Total {0}: {1:.2f} {2}".format(pargs.type,sum(plot_values),report_currency))
+plt.tight_layout()
+if pargs.html:
+	fn=pargs.filename.split('.')[0]+'_'+pargs.type+'.png'
+	plt.savefig(fn)
+	print_doc.append("<td>")
+	print_doc.append('<img src="{0}">'.format(fn))
+	print_doc.append("</td>")
+	print_doc.append("</tr>")
+	print_doc.append("</table>")
+else:
+	plt.show()
 
 if pargs.print_totals:
 	for c in tot:
-		print("\nTOTAL {0}\t{1:.2f}".format(c,tot[c]))
-
+		print_doc.append("TOTAL {0}\t{1:.2f}".format(c,tot[c]))
 
 # print out ledger entries if asked
 if pargs.print_ledger: 
@@ -210,4 +295,11 @@ if pargs.print_ledger:
 
 	qr=query.run_query(entries,config,qs,()) # ,numberify=True)
 	for r in qr[1]:
-		print('\t'.join([str(r[cols[k]]) for k in cols]))
+		print_doc.append('\t'.join([str(r[cols[k]]) for k in cols]))
+
+if pargs.html:
+	print_doc.append("</body>")
+	print_doc.append("</html>")
+
+
+print('\n'.join(print_doc))
