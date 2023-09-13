@@ -217,7 +217,7 @@ if pargs.html:
 	print_doc.append("}")
 	print_doc.append("</style></head>")
 	print_doc.append("<body>")
-	dfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2:.2f}</td><td>{3}</td></tr><td>{4:1.2f}</td></tr>'
+	dfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2:.2f}</td><td>{3}</td><td>{4:1.2f}</td></tr>'
 	tfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2}</td><td>{3:.2f}</td></tr>'
 	print_doc.append("<h1>{0} Report {1}</h1>".format(pargs.type,dt.date(dt.now()).isoformat()))
 	print_doc.append("<h2>Period from {0} to {1}</h2>".format(pargs.start_date,pargs.end_date))
@@ -250,9 +250,6 @@ for a in report_table:
 				plot_labels.append(a)
 			plot_values.append(v_rc[currency])
 			print_doc.append(tfmt.format(a,v[currency],currency,v_rc[currency]))
-	if pargs.details:
-		for st in report_table[a][2]:
-			print_doc.append(dfmt.format(st[0],st[1],st[2],st[3],st[4]))
 
 if pargs.html:
 	print_doc.append("</table>")
@@ -287,6 +284,22 @@ else:
 if pargs.print_totals:
 	for c in tot:
 		print_doc.append("TOTAL {0}\t{1:.2f}".format(c,tot[c]))
+
+# details tables
+if pargs.details:
+	if pargs.html:
+		print_doc.append('<table>')
+		print_doc.append('<tr><th>Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
+		afmt = '<tr><th>{}</th></tr>'
+	else:
+		afmt = '{0}'
+	for a in report_table:
+		print_doc.append(afmt.format(a))
+		for st in report_table[a][2]:
+			print_doc.append(dfmt.format(st[0],st[1],st[2],st[3],st[4]))
+	if pargs.html:
+		print_doc.append('</table>')
+		
 
 # print out ledger entries if asked
 if pargs.print_ledger: 
