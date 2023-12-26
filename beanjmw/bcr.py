@@ -47,6 +47,7 @@ ap.add_argument('-ma','--monthly_ave',required=False,action='store_true',default
 ap.add_argument('-dt','--details',required=False,action='store_true',default=False,help='Print subtotals, number of entries, and average months for each top-level entry')
 ap.add_argument('-cl','--clobber',required=False,action='store_true',default=False,help='Overwrite default config file if set')
 ap.add_argument('-html','--html',required=False,action='store_true',default=False,help='Output in static html')
+ap.add_argument('-np','--no_plot',required=False,action='store_true',default=False,help='No interactive plot - just print and exit')
 
 pargs=ap.parse_args(sys.argv[1:])
 
@@ -114,7 +115,7 @@ if pargs.report_config and os.path.isfile(pargs.report_config):
 	num_config=len(report_accounts)
 	for le in account_keys:
 		if not le in config_accounts:
-			report_accounts.append(ReportElement(le,'y',0,'y'))
+			report_accounts.append(ReportElement(le,'y',0,'y','y'))
 	if len(report_accounts) > num_config: # new accounts found 
 		report_accounts = save_config(pargs.report_config,report_accounts)
 	sys.stderr.write("{0} accounts ({1} new) in {2}\n".format(len(report_accounts),len(report_accounts)-num_config,pargs.report_config))
@@ -202,10 +203,11 @@ for k in report_groups:
 	report_table[k]=(v, v_rc, details)
 
 print_doc=[]
+# Sigh. It is 2023, still writing print statements of shitty HTML...
 if pargs.html:
 	print_doc.append("<!DOCTYPE html>")
 	print_doc.append("<html>")
-	print_doc.append("<head><style>")
+	print_doc.append('<head><style type="text/css">')
 	print_doc.append("table {")
 	print_doc.append("font-family: arial, sans-serif;")
 	print_doc.append("border-collapse: collapse;")
@@ -214,6 +216,14 @@ if pargs.html:
 	print_doc.append("  border: 1px #dddddd;")
 	print_doc.append("  text-align: right;")
 	print_doc.append("  padding: 8px;")
+	print_doc.append("}")
+	print_doc.append("tr.subheader {")
+	print_doc.append("  border: 1px solid blue;")
+	print_doc.append("  padding: 4px;")
+	print_doc.append("}")
+	print_doc.append("th.subheader {")
+	print_doc.append("  padding: 4px;")
+	print_doc.append("  text-align: left;")
 	print_doc.append("}")
 	print_doc.append("</style></head>")
 	print_doc.append("<body>")
@@ -271,7 +281,7 @@ ax.set_xlabel("Value ({0}{1}) ".format(report_currency,x_tag))
 ax.set_title("Total {0}: {1:.2f} {2}".format(pargs.type,sum(plot_values),report_currency))
 plt.tight_layout()
 if pargs.html:
-	fn=pargs.filename.split('.')[0]+'_'+pargs.type+'.png'
+	fn=os.path.split(os.path.splitext(pargs.filename)[0])[-1]+'_'+pargs.type+'.png'
 	plt.savefig(fn)
 	print_doc.append("<td>")
 	print_doc.append('<img src="{0}">'.format(fn))
@@ -279,7 +289,8 @@ if pargs.html:
 	print_doc.append("</tr>")
 	print_doc.append("</table>")
 else:
-	plt.show()
+	if not pargs.no_plot:
+		plt.show()
 
 if pargs.print_totals:
 	for c in tot:
@@ -289,8 +300,8 @@ if pargs.print_totals:
 if pargs.details:
 	if pargs.html:
 		print_doc.append('<table>')
-		print_doc.append('<tr><th>Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
-		afmt = '<tr><th>{}</th></tr>'
+		print_doc.append('<tr><th class="subheader">Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
+		afmt = '<tr class="subheader"><th class="subheader">{}</th></tr>'
 	else:
 		afmt = '{0}'
 	for a in report_table:
