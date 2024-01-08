@@ -153,7 +153,10 @@ class Importer(ImporterProtocol):
 		entries=[]
 		for ofxr in transactions:
 			meta=new_metadata(self.account_name, 0)
-			narration_str=" / ".join([ofxr.memo,ofxr.type])
+			if hasattr(ofxr, 'payee'):
+				narration_str=" / ".join([ofxr.payee, ofxr.memo,ofxr.type])
+			else:
+				narration_str=" / ".join([ofxr.memo,ofxr.type])
 			if hasattr(ofxr,'date'):
 				trn_date=ofxr.date
 			elif hasattr(ofxr, 'tradeDate'):
@@ -405,7 +408,7 @@ class Importer(ImporterProtocol):
 				account = ":".join([self.account_name, sec_account]),
 				units=Amount(amt,self.currency),
 			)
-			if fr.memo and len(fr.memo) > 0: # assign later
+			if (fr.memo and len(fr.memo) > 0) or (hasattr(fr, 'payee') and fr.payee and len(fr.payee)>0): # assign later
 				postings.remove(p1)
 			else: # can't be assigned - have it come from Transfer
 				postings[1]=p1._replace(
