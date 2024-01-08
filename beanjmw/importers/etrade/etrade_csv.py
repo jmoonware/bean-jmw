@@ -28,10 +28,11 @@ transaction_types={
 }
 
 # in the Description field, at least since 2021 
+# Does not work for previous years!
 investment_actions={
 'L/T CAPITAL GAIN':'CGLong',
 'S/T CAPITAL GAIN':'CGShort',
-'REINVEST':'Buy',
+'REINVEST':'Div',
 }
 
 default_open_date='2000-01-01'
@@ -149,9 +150,22 @@ class Importer(ImporterProtocol):
 				namt = fr.Amount+".00"
 				nfr = fr._replace(Amount=namt)
 			# KLUDGE: Actual date may be in action!
+			# DON'T replace date - the record date is used in the scrape file
+			# Dedup won't work otherwise
 			if 'RECORD' in fr.Description:
 				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{2}",fr.Description)
-				nfr = nfr._replace(TransactionDate = dm[0])
+#				nfr = nfr._replace(TransactionDate = dm[0])
+			# FIXME: this assumes there is another ReinvDiv record
+			# Note that we lose the S,L/T Cap Gain in the Description field!
+			# That is, each Dividend just looks like it came from Div
+			# Going forward, this is only needed for deduplication of qif
+			# ReinvDiv records
+			if fr.TransactionType=="Dividend" and Decimal(fr.Quantity)==0:
+				sys.stderr.write("Skipping dividend {0} {1}\n".format(fr.TransactionDate,fr.Symbol))
+				continue
+			# filter out transactions that are to be ignored
+			if "IGNORE" in fr.Description:
+				continue
 			narration_str=" / ".join([fr.Description,fr.TransactionType])
 			tn=Transaction(
 				meta=meta,
@@ -293,29 +307,34 @@ class Importer(ImporterProtocol):
 		elif etrade_action == 'Dividend':
 			# might be Long, Short, or reinvest
 			etrade_div_action='Div'
+			# FIXME: this is broken at the moment 
+			# Anything other than REINV is filtered before we get here
 			for tok in investment_actions:
 				if tok in fr.Description:
 					etrade_div_action=investment_actions[tok]	
-			account = ":".join([self.account_name.replace('Assets','Income'),sec_account,etrade_div_action])
-			units=Amount(-Decimal(fr.Amount),self.currency)
-			prc = Decimal(0)
-			if etrade_div_action == 'Buy':
-				account = ":".join([self.account_name,sec_account])
-				units=Amount(Decimal(fr.Quantity),sec_currency)
-				if len(fr.Quantity) > 0:
-					prc = abs(Decimal(fr.Amount)/Decimal(fr.Quantity))
+			# Check for 2020 and earlier transactions
+			# Here, Dividend has negative Amount and positive Quantity
+			# means it was a "Buy" i.e. a reinvest
+#			if Decimal(fr.Quantity)>0 and Decimal(fr.Amount) < 0:
+#				etrade_div_action = 'Div'
+			price_amt = None
+			account = ":".join([self.account_name,sec_account])
+			units=Amount(Decimal(fr.Quantity),sec_currency)
+			if fr.Quantity and len(fr.Quantity) > 0:
+				prc = abs(Decimal(fr.Amount)/Decimal(fr.Quantity))
+				price_amt = Amount(prc,self.currency)
 			postings[0]=p0._replace(
 				account = account,
 				units = units,
-				price = Amount(prc,self.currency),
+ 				price = price_amt,
 			)
 			postings[1]=p1._replace(
-				account = self.account_name + ":Cash",
+				account = ":".join([self.account_name,sec_currency,"Div"]),
 				units = Amount(Decimal(fr.Amount),self.currency)
 			)
 		elif etrade_action == 'Interest':
 			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),etrade_action]),
+				account = ":".join([self.account_name.replace('Assets','Income'),"IntInc"]),
 				units=Amount(-Decimal(fr.Amount),self.currency)
 			)
 			postings[1]=p1._replace(
@@ -393,6 +412,6 @@ class Importer(ImporterProtocol):
 			if len(ctoks) > 0 and len(ctoks[0])==0: # filter blank date
 				continue
 			if len(ctoks) >= len(etrade_cols):
-				table.append(ctoks[:len(etrade_cols)])
+				table.append([c.strip() for c in ctoks[:len(etrade_cols)]])
 
 		return(table)

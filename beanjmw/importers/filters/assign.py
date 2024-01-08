@@ -3,7 +3,7 @@ import beancount as bc
 from beancount.core.data import Posting,Open,Transaction,Balance
 from beancount.parser import printer
 from beancount.ingest.similar import find_similar_entries
-from beancount.core.data import D
+from beancount.core.data import D, Decimal
 from beancount.core import amount
 import numpy as np 
 import re
@@ -298,7 +298,7 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 			# check for zero value entries - lots of these in CC's
 			if type(e)==Transaction and len(e.postings)==1 and e.postings[0].units[0]==0 and remove_zero_value_transactions: 
 				continue
-			if type(e)==Transaction and (sum([p.units[0] for p in e.postings if p.units and p.units[0]])!=D(0) or len(e.postings)==1):
+			if type(e)==Transaction and unbalanced(e.postings):
 				if not assign_entry(e,assignLUT,assign_groups):
 					update_unassigned(e,unassigned_payees)
 			if type(e)==Open:
@@ -323,6 +323,22 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	open_entries=[Open({},default_account_open_date,a,["USD"],None) for a in account_list if not a in opened_accounts]
 
 	return([("new_opens",open_entries)]+new_entries)
+
+def unbalanced(postings):
+	""" Returns true of transaction is unbalanced
+	"""
+	ret=False
+	# Simple case: only 1 posting then by defn unbalanced
+	if len(postings)==1:
+		ret=True
+	# see if sum of transactions are balanced in right currency
+	else:
+		delta= sum([p.units[0] for p in postings if p.units and p.units[0]])
+		matched = set()
+		[matched.add(p.units[1]) for p in postings if p.units and p.units[0]]
+		if delta!=D(0) and len(matched)==1:
+			ret=True
+	return(ret)
 
 def deduplicate(extracted_entries_list,ledger_entries):
 	""" Removes or marks entries if they exist in another ingest or ledger
@@ -408,6 +424,8 @@ def deduplicate(extracted_entries_list,ledger_entries):
 		
 	return(deduped_entries_list)
 
+compare_delta = Decimal("0.0100001")
+
 def compare_entries(entries_a,entries_b):
 	""" Compares two lists of entries to see if there are duplicates 
 		Arguments: 
@@ -439,6 +457,9 @@ def compare_entries(entries_a,entries_b):
 		if type(ea)==Transaction:
 			aa=None
 			va=None
+			# FIXME: This can fail for two e.g. Cash transactions of the
+			# same amount on the same day (e.g. buying $10 of X and $10 of Y)
+			# Need to check all postings of transaction
 			if len(ea.postings) > 0:
 				aa=ea.postings[0].account
 				va=ea.postings[0].units 
@@ -450,7 +471,7 @@ def compare_entries(entries_a,entries_b):
 						if p.account==aa:
 							vn=p.units
 					# date, amount, and accounts match
-					if vn and vn==va and ne_ts==da: 
+					if vn and va and vn.currency==va.currency and abs(vn.number-va.number) < compare_delta and ne_ts==da: 
 						dl.append(ne)
 		elif type(ea)==Balance or type(ea)==Open:
 			for ne in near_entries:

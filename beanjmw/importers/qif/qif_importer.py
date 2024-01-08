@@ -133,7 +133,7 @@ class Importer(ImporterProtocol):
 					meta=meta,
 					date=dt.date(qt.date),
 					flag="*",
-					payee="Investment",
+					payee="Investment from QIF",
 					narration=narration_str,
 					tags=EMPTY_SET,
 					links=EMPTY_SET,
