@@ -39,10 +39,14 @@ investment_actions={
 default_open_date='2000-01-01'
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,currency='USD'):
+	def __init__(self,account_name,currency='USD',account_number=''):
 		self.account_name=account_name
-		self.acct_tok=self.account_name.split(':')[-1]
-		self.acct_tail=self.acct_tok[len(self.acct_tok)-4:] 
+		self.account_number=account_number
+		if len(account_number) > 0:
+			self.acct_tail=self.account_number[-4:]
+		else:
+			self.acct_tok=self.account_name.split(':')[-1]
+			self.acct_tail=self.acct_tok[len(self.acct_tok)-4:] 
 		self.currency=currency
 		self.account_currency={} # set up on init
 		self.security_ids={} # LUT from uniqueid provided in transaction
@@ -181,6 +185,12 @@ class Importer(ImporterProtocol):
 		ofx_action=None
 		if fr.type in investment_actions:
 			ofx_action=investment_actions[fr.type]
+		# KLUDGE to deal with Etrade...
+		if "DIV" in fr.memo and fr.type=='income':
+			ofx_action="Div"
+
+		if "INTEREST" in fr.memo and fr.type=='other':
+			ofx_action="IntInc"
 
 		# unsure what we should do here so bail
 		if not ofx_action:
@@ -411,7 +421,7 @@ class Importer(ImporterProtocol):
 		meta=new_metadata(acct, 0)
 		amt=Decimal(0)
 		if rec.total!=0:
-			amt=rec.total
+			amt=rec.total+Decimal('0.00')
 		qty=Decimal(0.000000001)
 		if rec.units > 0:
 			qty=rec.units
