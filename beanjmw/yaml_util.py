@@ -9,13 +9,14 @@ from collections import OrderedDict
 ap=argparse.ArgumentParser()
 
 ap.add_argument("--existing","-e",required=True,help='Existing yaml file for account',default='')
-ap.add_argument("--add","-a",required=False,help='More entries to add, usually from unassigned file',default='')
+ap.add_argument("--remap","-r",required=False,help='yaml file that remaps one account to another (each line is existing: remapped)',default='')
+ap.add_argument("--add","-a",required=False,help='More entries to add, usually from unassigned file, can be comma delimited list',default='')
 ap.add_argument("--override","-o",required=False,help='Use these entries to override any unassigned in existing',default='')
 ap.add_argument("--column_width","-cw",required=False,help='Align second column to this value',default=0)
 ap.add_argument("--overwrite","-ow",required=False,help='Quietly overwrite entries that are added, otherwise error if in existing',default=False,action='store_true')
 ap.add_argument("--similar","-sp",required=False,help='Check regex patterns for subsetting and remove redundant rules',default=False,action='store_true')
-
 ap.add_argument("--invert","-iv",required=False,help='Organize by account, not regex',default=False,action='store_true')
+ap.add_argument("--chartofaccounts","-coa",required=False,help='Just list accounts - useful for remapping',default=False,action='store_true')
 
 clargs=ap.parse_args(sys.argv[1:])
 
@@ -50,13 +51,17 @@ with open(clargs.existing,'r') as f:
 
 add_entries={}
 if len(clargs.add)>0:
-	with open(clargs.add,'r') as f:
-		add_entries=yaml.safe_load(f)
-	for ae in add_entries:
-		if ae in ex_entries and not clargs.overwrite:
-			msg="Duplicate entry {0} for existing {1} (trying to add {2})\n".format(ae,ex_entries[ae],add_entries[ae])
-			raise ValueError(msg)
-		ex_entries[ae]=add_entries[ae] 
+	add_files=clargs.add.split(',')
+	for add_file in add_files:
+		with open(add_file,'r') as f:
+			add_entries=yaml.safe_load(f)
+		for ae in add_entries:
+			if ae in ex_entries:
+				if ex_entries[ae]!=add_entries[ae]:
+					msg="Duplicate entry {0} for existing {1} (trying to add {2})\n".format(ae,ex_entries[ae],add_entries[ae])
+					if not clargs.overwrite:
+						raise ValueError(msg)
+			ex_entries[ae]=add_entries[ae] 
 
 override_entries={}
 if len(clargs.override)>0:
@@ -64,6 +69,8 @@ if len(clargs.override)>0:
 		override_entries=yaml.safe_load(f)
 
 # override logic
+# will override UNASSIGNED entries with new account or payee
+# if the key (which is a regex string or check number) exactly matches
 for oe in override_entries:
 	if oe in ex_entries:
 		if "UNASSIGNED" in ex_entries[oe]:
@@ -71,6 +78,7 @@ for oe in override_entries:
 
 sorted_entries=OrderedDict(sorted(ex_entries.items()))
 
+# check if it is a check number or regex string yaml file
 n_int=sum([True for k in sorted_entries if type(k)==int])
 if n_int/len(sorted_entries) > 0.99: # all integers
 	col_width=6
@@ -106,7 +114,18 @@ if clargs.similar:
 			simplified_entries[e]=sorted_entries[e]
 	print("# yaml_util: Removed {0} of {1} redundant regex patterns".format(removed,len(sorted_entries)))
 
-if clargs.invert:
+# this remaps the existing entries account values if a remap file is present
+if len(clargs.remap) > 0:
+	with open(clargs.remap) as f:
+		remap_dict=yaml.safe_load(f)
+	acct_vals=np.array(simplified_entries.values())
+	for ra in remap_dict:
+		if remap_dict[ra] and ra in acct_vals:
+			acct_vals[acct_vals==ra]=remap_dict[ra]
+	for ia,ea in enumerate(simplified_entries):
+		simplified_entries[ea]=acct_vals[ia]
+
+if clargs.invert or clargs.chartofaccounts:
 	# print by account
 	by_account={}
 	for k,v in simplified_entries.items():
@@ -118,8 +137,9 @@ if clargs.invert:
 	sorted_by_account=OrderedDict(sorted(by_account.items()))
 	for k,v in sorted_by_account.items():
 		print(k+":")
-		for vi in v:
-			print(" - " + quotes + vi + quotes)
+		if clargs.invert:
+			for vi in v:
+				print(" - " + quotes + vi + quotes)
 
 else:
 	# output combined, sorted, possibly simplified items, preserving comments

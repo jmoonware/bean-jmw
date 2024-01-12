@@ -131,7 +131,7 @@ class Importer(ImporterProtocol):
 		for fr in map(self.CsvRow._make,table): 
 			# meta={"lineno":0,"filename":self.account_name}
 			meta=new_metadata(self.account_name, 0)
-			narration_str=fr.description
+			narration_str=fr.description.strip().replace('/',' ')
 			tn=Transaction(
 				meta=meta,
 				date=dt.date(dt.strptime(fr.date,'%m/%d/%Y')),
@@ -155,7 +155,7 @@ class Importer(ImporterProtocol):
 		postings.append(
 			Posting(
 				account = self.account_name,
-				units=Amount(amt,self.currency),
+				units=Amount(-amt,self.currency),
 				cost=None,
 				price=None,
 				flag=None,
