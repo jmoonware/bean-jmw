@@ -13,6 +13,9 @@ default_open_date='2000-01-01'
 # column delimiter
 splitchar=',' 
 
+# currency symbol - sometimes amount strings have these
+currency_symbol='$'
+
 # need at least these columns assigned
 required_fields = ['date','amount','description']
 
@@ -151,7 +154,7 @@ class Importer(ImporterProtocol):
 
 		amt = Decimal('0')
 		if len(fr.amount)>0:
-			amt = Decimal(fr.amount)
+			amt = Decimal(fr.amount.replace(currency_symbol,''))
 		postings.append(
 			Posting(
 				account = self.account_name,

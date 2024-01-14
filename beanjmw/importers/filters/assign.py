@@ -19,6 +19,17 @@ remove_duplicates=True
 remove_zero_value_transactions=True
 missing_payee_tag="UNASSIGNED"
 
+def is_check(e):
+	""" Determines if it is a check from narration and returns check number
+		or None if not a check
+	"""
+	cn = None
+	if type(e)==Transaction:
+		checkno_match = re.search('CHECK ('+numeric_regex+')',e.narration.upper())
+		if checkno_match:
+			cn=int(checkno_match.groups()[0])
+	return(cn)
+	
 def assign_check_payees(extracted_entries,account,filename=""):
 	""" Assign check payees from a yaml file by number
 		Call this function only for checking accounts
@@ -48,33 +59,28 @@ def assign_check_payees(extracted_entries,account,filename=""):
 	unassigned_checks={}
 	for e in extracted_entries:
 		new_entry=e
-		if type(e)==Transaction:
-			if "CHECK " in e.narration.upper():
-				toks=e.narration.upper().split('CHECK ')
-				if len(toks) > 1:
-					checkno_match=re.search(numeric_regex,toks[1])
-					if checkno_match:
-						cn=int(checkno_match.group())
-						if cn in payees_for_check:
-							# format payee / memo / Check #
-							nsplt=e.narration.split('/')
-							memo_str=""
-							if len(nsplt) > 1:
-								memo_str=nsplt[1]
-							nstr=" / ".join([payees_for_check[cn],memo_str,' '.join(["Check",str(cn)])])
-							new_entry=e._replace(narration=nstr)
-						else: # unassigned check number
-							# previously categorized, probably by Quicken
-							if "category" in e.meta:
-								unassigned_checks[cn]=e.meta['category']
-							else:
-								amt=""
-								if len(e.postings)>0:
-									amt = e.postings[0].units
-								unassigned_checks[cn]=missing_payee_tag + " # " + e.date.isoformat()+","+str(amt)
-				# FIXME: special case for some banks
-			elif re.match("CHECK$",e.narration.upper()):
-				new_entry=e._replace(narration="COUNTER CASH")
+		cn = is_check(e)
+		if cn:
+			if cn in payees_for_check:
+				# format payee / memo / Check #
+				nsplt=e.narration.split('/')
+				memo_str=""
+				if len(nsplt) > 1:
+					memo_str=nsplt[1]
+				nstr=" / ".join([payees_for_check[cn],memo_str,' '.join(["Check",str(cn)])])
+				new_entry=e._replace(narration=nstr)
+			else: # unassigned check number
+				# previously categorized, probably by Quicken
+				if "category" in e.meta:
+					unassigned_checks[cn]=e.meta['category']
+				else:
+					amt=""
+					if len(e.postings)>0:
+						amt = e.postings[0].units
+					unassigned_checks[cn]=missing_payee_tag + " # " + e.date.isoformat()+","+str(amt)
+		# FIXME: special case for some banks - no check number
+		elif type(e)==Transaction and re.match("CHECK$",e.narration.upper()):
+			new_entry=e._replace(narration="COUNTER CASH")
 		new_entries.append(new_entry)
 	# track unassigned checks
 	if len(unassigned_checks) > 0:

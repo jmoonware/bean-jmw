@@ -49,6 +49,70 @@ class Importer(ImporterProtocol):
 			return found
 		else:
 			 return False
+
+	def create_transaction(self,date,amount,payee_str,memo_str,num_str,category,meta):
+		if num_str:
+			num_str=num_str.strip()
+		else:
+			num_str=""
+		if category:
+			# remove invalid chars, capitalize
+			clean_category=category
+			for c in quicken_category_remove:
+				clean_category= clean_category.replace(c,"")
+			cat_toks=clean_category.split(":")
+			cap_cats=[]
+			for ct in cat_toks: # Capitalize First LetterInWords
+				cap_cats.append(ct[0].upper()+ct[1:]) 
+			meta['category']=":".join(cap_cats)
+		if len(num_str) > 0:
+			num_str=" "+num_str
+		check_str=""
+		if payee_str:
+			payee_str=payee_str.strip().replace('/','.')
+			if "CHECK" in payee_str.upper():
+				check_str="Check"
+		else:
+			payee_str=""
+		n_toks=[payee_str,memo_str,check_str+num_str]
+		 # truly blank
+		if len(''.join(n_toks))==0 and not 'category' in meta:
+			n_toks[0]='EMPTY' # for assigning later
+		narration_str=" / ".join(n_toks)
+		tn=Transaction(
+			meta=meta,
+			date=dt.date(date),
+			flag="*",
+			payee=payee_str,
+			narration=narration_str,
+			tags=EMPTY_SET,
+			links=EMPTY_SET,
+			postings=[],
+		)
+		tn.postings.append(
+			Posting(
+				account=self.account_name,
+				units=Amount(amount,self.currency),
+				cost=None,
+				price=None,
+				flag=None,
+				meta={},
+			)
+		)
+		return(tn)
+
+	def is_split_check(self,qt):
+		ret=False
+		if qt.payee and "CHECK" in qt.payee.upper():
+			if hasattr(qt,"splits") and qt.splits and len(qt.splits)>0:
+				ret=True
+		return(ret)
+
+	def clean_str(self,s):
+		ret=""
+		if s:
+			ret=s.strip().replace('/','.')
+		return(ret)
 		
 	def extract(self, file, existing_entries=None):
 		"""Extract transactions from a file.
@@ -68,63 +132,38 @@ class Importer(ImporterProtocol):
 			return(entries)
 		securities=qif.get_securities() # may be in qif export
 		for tno, qt in enumerate(qif.get_transactions(True)[0]):
-			memo_str=""
-			if qt.memo:
-				memo_str=qt.memo.strip().replace('/','.')
 			meta=new_metadata(file.name, tno)
 			if type(qt)==QifTransaction:
-				num_str=""
-				if qt.num:
-					num_str=qt.num.strip()
-				if qt.category:
-					# remove invalid chars, capitalize
-					clean_category=qt.category
-					for c in quicken_category_remove:
-						clean_category= clean_category.replace(c,"")
-					cat_toks=clean_category.split(":")
-					cap_cats=[]
-					for ct in cat_toks: # Capitalize First LetterInWords
-						cap_cats.append(ct[0].upper()+ct[1:]) 
-					meta['category']=":".join(cap_cats)
-				if len(num_str) > 0:
-					num_str=" "+num_str
-				payee_str=""
-				check_str=""
-				if qt.payee:
-					payee_str=qt.payee.strip().replace('/','.')
-					if "CHECK" in qt.payee.upper():
-						check_str="Check"
-				n_toks=[payee_str,memo_str,check_str+num_str]
-				 # truly blank
-				if len(''.join(n_toks))==0 and not 'category' in meta:
-					n_toks[0]='EMPTY' # for assigning later
-				narration_str=" / ".join(n_toks)
-				tn=Transaction(
-					meta=meta,
-					date=dt.date(qt.date),
-					flag="*",
-					payee=payee_str,
-					narration=narration_str,
-					tags=EMPTY_SET,
-					links=EMPTY_SET,
-					postings=[],
-				)
-				tn.postings.append(
-					Posting(
-						account=self.account_name,
-						units=Amount(qt.amount,self.currency),
-						cost=None,
-						price=None,
-						flag=None,
-						meta={},
+				# Special case: Used to record split checks for paying
+				# credit cards - turn each split into a transaction
+				if self.is_split_check(qt):
+					for st in qt.splits:
+						entries.append(
+							self.create_transaction(
+								qt.date,
+								st.amount,
+								qt.payee,
+								self.clean_str(st.memo),
+								qt.num,
+								st.category,
+								meta
+							)
+						)
+				else:
+					entries.append(
+						self.create_transaction(
+							qt.date,
+							qt.amount,
+							qt.payee,
+							self.clean_str(qt.memo),
+							qt.num,
+							qt.category,
+							meta
+						)
 					)
-				)
-				entries.append(tn)
 			elif type(qt)==QifInvestment:
-				act_str=""
-				if qt.action:
-					act_str=qt.action.strip()
-				n_toks=[memo_str,act_str]
+				act_str=self.clean_str(qt.action)
+				n_toks=[self.clean_str(qt.memo),act_str]
 				 # truly blank
 				if len(''.join(n_toks))==0 and not 'category' in meta:
 					n_toks[0]='EMPTY' # for assigning later
