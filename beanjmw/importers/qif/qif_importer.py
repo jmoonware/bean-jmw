@@ -136,15 +136,21 @@ class Importer(ImporterProtocol):
 			if type(qt)==QifTransaction:
 				# Special case: Used to record split checks for paying
 				# credit cards - turn each split into a transaction
+				# and mangle check number so payee isn't assigned from file
 				if self.is_split_check(qt):
 					for st in qt.splits:
+						payee_str="SPLIT "
+						if st.memo:
+							payee_str = payee_str + st.memo
+						if st.category:
+							payee_str = payee_str + " " + st.category
 						entries.append(
 							self.create_transaction(
 								qt.date,
 								st.amount,
-								qt.payee,
+								payee_str,
 								self.clean_str(st.memo),
-								qt.num,
+								"S"+qt.num, # won't be interp as check later
 								st.category,
 								meta
 							)
