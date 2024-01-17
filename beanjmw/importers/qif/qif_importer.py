@@ -150,7 +150,7 @@ class Importer(ImporterProtocol):
 								st.amount,
 								payee_str,
 								self.clean_str(st.memo),
-								"S"+qt.num, # won't be interp as check later
+								"S"+self.clean_str(qt.num), # won't be interp as check later
 								st.category,
 								meta
 							)

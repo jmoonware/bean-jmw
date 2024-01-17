@@ -27,6 +27,9 @@ from collections import namedtuple
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD',account_number=None,csv_map=None):
 		self.account_name=account_name
+		self.sign = -1
+		if re.match("Assets:",self.account_name):
+			self.sign=1 # assets increase in account
 		if account_number:
 			self.acct_tail=account_number[-4:]
 		else:
@@ -158,7 +161,7 @@ class Importer(ImporterProtocol):
 		postings.append(
 			Posting(
 				account = self.account_name,
-				units=Amount(-amt,self.currency),
+				units=Amount(self.sign*amt,self.currency),
 				cost=None,
 				price=None,
 				flag=None,

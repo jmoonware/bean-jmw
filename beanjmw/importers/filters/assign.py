@@ -247,18 +247,26 @@ def assign_entry(e, assignLUT, assign_groups):
 def update_unassigned(e, unassigned_payees):
 	""" Updates the unassigned table
 	"""
-	pre_assigned_category="Expenses:"
+	pre_assigned_category="Expenses:UNASSIGNED"
 	unassigned_payee="EMPTY"
 	if 'category' in e.meta:
-		pre_assigned_category+=e.meta['category']
+		pre_assigned_category=':'.join(["Expenses",e.meta['category']])
 		unassigned_payee=e.meta['category']
-	else:
-		pre_assigned_category+="UNASSIGNED"
 	# first is always payee
 	tok=e.narration.split('/')[0].strip() 
 	if len(tok)!=0: # use 1st field of narration 
 		unassigned_payee=tok
-	unassigned_payees[regexify(unassigned_payee)]=pre_assigned_category
+	reg_key = regexify(unassigned_payee)
+	if reg_key in unassigned_payees and pre_assigned_category!=unassigned_payees[reg_key]:
+		sys.stderr.write("Warning: Ambiguous regex key {0}: was {1} now {2}\n".format(reg_key,unassigned_payees[reg_key],pre_assigned_category))
+		# the original reg key is ambiguous, so create key from cat
+		# otherwise the ambiguous key would be the first assignment in file
+		# which works but probably isn't wanted - best to delete the ambiguous
+		# key if possible
+		if not unassigned_payees[reg_key] in unassigned_payees:
+			unassigned_payees[unassigned_payees[reg_key]]=unassigned_payees[reg_key]
+		reg_key=pre_assigned_category # use this as new key in unassigned
+	unassigned_payees[reg_key]=pre_assigned_category
 	return
 
 def save_unassigned(unassigned_payees,account_file,ex_file):
