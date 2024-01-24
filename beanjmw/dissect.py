@@ -1,5 +1,7 @@
 import requests
 import re
+import numpy as np
+# remember to whitelist fc.yahoo.com for yfinance if using pihole!
 import yfinance as yf
 import sys,os
 from datetime import datetime as dt
@@ -7,6 +9,7 @@ from datetime import timedelta
 from pytz import timezone as tz
 import yaml
 from bs4 import BeautifulSoup as BS
+from beancount.core.data import Price, Amount, Decimal
 
 headers = {
 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0"
@@ -26,6 +29,26 @@ etf_holding_url='/'.join([etf_url,'holding'])
 mf_holding_url='/'.join([mf_url,'holding'])
 etf_sector_url='https://etfdb.com/etf/{}/#charts'
 yf_holding_url='https://finance.yahoo.com/quote/{}/holdings'
+
+# exchange rate URL
+exchange_rate_url='https://api.exchangerate-api.com/v4/latest/'
+
+cache_dir='yaml'
+
+def get_exchange_rate(from_curr,to_curr):
+	r = requests.get(exchange_rate_url+from_curr.upper())
+	data = r.json()
+	ef = 1
+	if data and 'rates' in data:
+		rates=data['rates']
+		if from_curr.upper() in rates and to_curr in rates:
+			ef = rates[to_curr]
+			# KLUDGE for pence vs Pound
+			if from_curr[-1].islower():
+				ef=0.01*ef
+		else:
+			sys.write.stderr("Can't get exchange rate between {0} and {1}\n".format(from_curr,to_curr))
+	return(ef)
 
 def get_page(url):
 	r=''
@@ -70,7 +93,10 @@ def get_yahoo(symbol):
 el_pat = '" *, *"'
 
 def get_holdings_table(symbol,yf_ticker):
-	qt=yf_ticker.info['quoteType']
+	if 'quoteType' in yf_ticker.info:
+		qt=yf_ticker.info['quoteType']
+	else:
+		qt = 'UNKNOWN'
 	holdings_table={}
 	holdings_table['symbol']=[]
 	holdings_table['name']=[]
@@ -100,6 +126,11 @@ def get_holdings_table(symbol,yf_ticker):
 	elif qt == 'MONEYMARKET': 
 		holdings_table['symbol']=[symbol]
 		holdings_table['name']=['CASH']
+		holdings_table['perc']=[100.]
+		return(holdings_table)
+	else:
+		holdings_table['symbol']=[symbol]
+		holdings_table['name']=['UNKNOWN']
 		holdings_table['perc']=[100.]
 		return(holdings_table)
 
@@ -188,12 +219,16 @@ info_pats = ['Expense Ratio','SEC Yield', 'Dividend \(Yield\)']
 
 def get_info_table(symbol, yf_ticker):
 	summary_table={}
-	qt=yf_ticker.info['quoteType']
+	if 'quoteType' in yf_ticker.info:
+		qt=yf_ticker.info['quoteType']
+	else:
+		sys.stderr.write("get_info_table: no info for {0}\n".format(symbol))
+		qt="UNKNOWN"
 	exp_table={}
 	fee_table={}
 	sector_table={}
 	stat_table={}
-	if qt!='MONEYMARKET': # bypass, use yfinance
+	if qt!='MONEYMARKET' and qt!='UNKNOWN': # bypass, use yfinance
 		sector_pat = r'<section id="mf_sector">([\S\s]*?)</section'
 		if qt == 'MUTUALFUND':
 			exp_pat = r'<section id="mf_expenses">([\S\s]*?)</section'
@@ -267,6 +302,8 @@ def get_info_table(symbol, yf_ticker):
 		summary_table['SECT'][yf_ticker.info['sector']]=100.
 	if qt == 'MONEYMARKET':
 		summary_table['SECT']['CASH']=100.
+	if qt == 'UNKNOWN':
+		summary_table['SECT']['UNKNOWN']=100.
 	if qt == 'ETF':
 		# have to look somewhere else for ETF index breakdowns
 		r = get_page(etf_sector_url.format(symbol))
@@ -282,24 +319,98 @@ def get_info_table(symbol, yf_ticker):
 	return(summary_table)
 
 cache_timeout_days=3
-def quote(symbol,tk):
+
+def update_price_table(symbol,prc,prices):
+	# update price table
+	if prices:
+		if not symbol in prices:
+			prices[symbol]={}
+		prices[symbol][prc.date]=prc
+	return
+
+def quote(symbol,tk=None,prices=None,quote_date=None):
+	''' Arguments: string ticker symbol, optionally a yfinance ticker
+		for this symbol (might already have one, so saves time)
+		optional prices dict based on price directives in loaded ledger
+		optional date for quote (otherwise use today)
+		Returns Beancount Price named tuple
+	'''
+	# if not supplied, quote for today
+	if not quote_date:
+		quote_date = dt.date(dt.now())
+	# try the supplied price table
+	if prices and symbol in prices:
+		# get closest date 
+		ta=np.array([x for x in prices[symbol].keys()])
+		tidx=np.argmin(np.abs(quote_date-ta))
+		ctd = cache_timeout_days
+		prc = prices[symbol][ta[tidx]]
+		if 'cache_timeout_days' in prc.meta:
+			ctd = int(prc.meta['cache_timeout_days'])
+		# if ctd < 0, just use whatever is closest no matter the timedelta
+		if ctd <= 0 or np.abs(ta[tidx] - quote_date) < timedelta(ctd):
+			sys.stderr.write(
+				"{0} using ledger price {1} from {2}\n".format(
+					symbol,
+					prc.amount,
+					prc.date.isoformat(),
+				)
+			)	
+			return(prc) # last quote price
+	# if we get here, not in price table - check info cache
+	# TODO: don't store quotes in info cache	
 	info_table = check_cache(symbol)
-	if len(info_table) > 0 and 'QUOTE' in info_table and 'QUOTE_DATE' in info_table:
-		return(info_table['QUOTE'],info_table['QUOTE_DATE'])
+	if len(info_table) > 0 and 'QUOTE' in info_table and 'QUOTE_DATE' in info_table and 'QUOTE_CURRENCY' in info_table:
+		prc = Price(
+			{},
+			dt.date(dt.fromisoformat(info_table['QUOTE_DATE'])),
+			info_table['QUOTE_CURRENCY'],
+			Decimal(info_table['QUOTE']),
+		)
+		update_price_table(symbol,prc,prices)
+		return(prc)
 
 	# either expired cache or no info
-	start_date=dt.date(dt.now()-timedelta(days=cache_timeout_days)).isoformat()
-	if not tk:
-		tk = yf.ticker.Ticker(symbol)
-	df=tk.history(start=start_date)
-	qt=0
-	if len(df) > 0 and 'Close' in df.columns:
-		qt = float(df['Close'][-1])
-		qd = df.index[-1]
-	return(qt,qd)
+	start_date=(quote_date-timedelta(days=cache_timeout_days)).isoformat()
+
+	qt=Decimal('0.00')
+	qd=dt.date(dt.now())
+	qc='UNKNOWN'
+	try:
+		if not tk:
+			tk = yf.ticker.Ticker(symbol)
+		qtype='UNKNOWN'
+		if 'quoteType' in tk.info:
+			qtype=tk.info['quoteType']
+		if qtype=='MONEYMARKET':
+			qt = Decimal('1.00000')
+			qc = tk.info['currency']
+		if qtype !='MONEYMARKET' and qtype !='UNKNOWN':
+			df=tk.history(start=start_date)
+			if len(df) > 0 and 'Close' in df.columns:
+				ta=np.array([dt.date(x) for x in df.index])
+				tidx=np.argmin(np.abs(ta-quote_date))
+				if np.abs(ta[tidx]-quote_date) < timedelta(cache_timeout_days):
+					qt = round(Decimal(df['Close'][tidx]),5)
+					qc = tk.info['currency']
+					qd = dt.date(df.index[tidx])
+				# might as well add all the prices we just got
+				for close_date, close_val in zip(df.index,df['Close']):
+					prc = Price({},date=dt.date(close_date),currency=symbol,amount=Amount(round(Decimal(close_val),5),qc))
+					update_price_table(symbol,prc,prices)
+			else:
+				sys.stderr.write("Unable to obtain quote for {}\n".format(symbol))
+	except Exception as err:
+		sys.stderr.write("Error getting quote {0}: {1}\n".format(symbol,err))
+
+	prc = Price({},date=qd,currency=symbol,amount=Amount(qt,qc))
+	if qc!='UNKNOWN':
+		update_price_table(symbol,prc,prices)
+		
+	return(prc)
 
 def check_cache(symbol):
-	yaml_file=symbol+'.yaml'
+	yaml_file=os.path.join(cache_dir,symbol+'.yaml')
 	info_table={}
 	if os.path.isfile(yaml_file):
 		with open(yaml_file,'r') as f:
@@ -311,10 +422,12 @@ def check_cache(symbol):
 		right_now=tzi.localize(dt.now())
 		if right_now-timedelta(days=cache_timeout_days) < last_quote_time:
 			sys.stderr.write("Returning cache info for {}...\n".format(symbol))
+		else:
+			sys.stderr.write("Cache out of date for {}...\n".format(symbol))
 	return(info_table)
 
 # call this function on each symbol in portfolio
-def get_all(symbol):
+def get_all(symbol,clobber=False):
 
 	info_table = check_cache(symbol)
 	if len(info_table) > 0:
@@ -325,13 +438,19 @@ def get_all(symbol):
 	tk = yf.ticker.Ticker(symbol)
 	info_table = get_info_table(symbol, tk)
 	latest_quote=quote(symbol,tk)
-	info_table['QUOTE_DATE']=latest_quote[1].isoformat()
-	info_table['QUOTE']=latest_quote[0]
+	info_table['QUOTE_DATE']=latest_quote.date.isoformat()
+	info_table['QUOTE']=latest_quote.amount[0]
+	info_table['QUOTE_CURRENCY']=latest_quote.amount[1]
 	info_table['HOLDINGS']=get_holdings_table(symbol, tk)
-	info_table['QUOTE_TYPE']=tk.info['quoteType']
+	if 'quoteType' in tk.info:
+		info_table['QUOTE_TYPE']=tk.info['quoteType']
 	info_table['YF_TABLES']=get_yahoo(symbol)
-	
-	with open(symbol+".yaml",'w') as f:
-		yaml.dump(info_table, f)	
 
+	if not os.path.isdir(cache_dir):
+		os.makedirs(cache_dir)
+	yaml_path = os.path.join(cache_dir,symbol+".yaml")
+	if not os.path.isfile(yaml_path) or clobber:
+		with open(yaml_path,'w') as f:
+			yaml.dump(info_table, f)	
+		
 	return(info_table)

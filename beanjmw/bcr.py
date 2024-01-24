@@ -2,6 +2,7 @@
 
 from beancount.query import query
 from beancount.loader import load_file
+from beancount.parser import printer
 import argparse
 import os
 import sys
@@ -9,17 +10,22 @@ import re
 from datetime import datetime as dt
 from datetime import timedelta
 from beancount.core.data import Open, Amount, Decimal
+from beancount.core.data import Price
+from operator import attrgetter
 import numpy as np
 from collections import namedtuple
 import matplotlib.pyplot as plt
 from . import dissect as ds
 
 report_currency='USD'
-def convert_currency(symbol,units):
-	res = units
+def convert_currency(symbol,units,quote_date=None):
+	res = round(Decimal(units),5)
 	if symbol!=report_currency:
-		val,qd=ds.quote(symbol, None)
-		res = val*units
+		prc=ds.quote(symbol, prices=price_table,quote_date=quote_date)
+		ef = 1
+		if prc.amount.currency!=report_currency:
+			ef = ds.get_exchange_rate(prc.amount.currency, report_currency)
+		res = round(Decimal(ef),5)*res*prc.amount.number
 	return(res)
 
 # for report_config file
@@ -52,6 +58,19 @@ ap.add_argument('-np','--no_plot',required=False,action='store_true',default=Fal
 pargs=ap.parse_args(sys.argv[1:])
 
 entries,errors,config=load_file(pargs.filename)
+# first thing - create price table
+price_table={}
+for e in filter(lambda e: type(e)==Price,entries):
+	if "__implicit_prices__" in e.meta:
+		continue
+	if not e.currency in price_table:
+		price_table[e.currency]={}
+	# don't overwrite entries without cache_timeout_days
+	if not e.date in price_table[e.currency] or (e.date in price_table[e.currency] and 'cache_timeout_days' in e.meta):
+		price_table[e.currency][e.date]=e
+# now sort the prices by date, once
+for c in price_table:
+	price_table[c]=dict(sorted(price_table[c].items()))
 
 acct_match=pargs.type
 if len(pargs.account) > 0:
@@ -78,8 +97,9 @@ else:
 	months_ave=1
 
 # make a dict of open accounts in ledger
-account_keys=[e.account for e in entries if type(e)==Open]
-account_keys.sort()
+account_set=set()
+[account_set.add(e.account) for e in entries if type(e)==Open]
+account_keys=sorted(account_set)
 
 def save_config(path,report_elements):
 	accts = [e.account for e in report_accounts]
@@ -188,15 +208,15 @@ for k in report_groups:
 			amount = first_position[0] 
 			currency=amount[1]
 			if not currency in v:
-				v[currency]=0.
+				v[currency]=Decimal('0.00000')
 			if not currency in v_rc:
-				v_rc[currency]=0.
+				v_rc[currency]=Decimal('0.00000')
 			if amount[0]:
-				res = abs(float(amount[0])/ma)
-				res_rc = convert_currency(currency, res)
+				res = abs(amount[0]/round(Decimal(ma),5))
+				res_rc = convert_currency(currency, res, dt.date(dt.fromisoformat(pargs.end_date)))
 			else:
-				res=0.
-				res_rc=0.
+				res=Decimal('0.00000')
+				res_rc=Decimal('0.00000')
 			details.append((a,res,ma,query_results[a][1],res_rc))
 			v[currency]+=res
 			v_rc[currency]+=res_rc
@@ -251,7 +271,7 @@ for a in report_table:
 	v_rc=report_table[a][1]
 	for currency in v: 
 		if not currency in tot:
-			tot[currency]=0.
+			tot[currency]=Decimal('0.00000')
 		tot[currency]+=v_rc[currency]
 		if v[currency]!=0 or pargs.zero_entries:
 			if currency!=report_currency: 
@@ -274,7 +294,7 @@ if pargs.type=='Assets':
 else:
 	mult=1
 	x_tag=''
-ax.barh(range(len(plot_values)),mult*np.array(plot_values)[idx])
+ax.barh(range(len(plot_values)),mult*np.array(plot_values,dtype=float)[idx])
 ax.set_yticks(range(len(plot_values)),labels=np.array(plot_labels)[idx])
 ax.invert_yaxis()
 ax.set_xlabel("Value ({0}{1}) ".format(report_currency,x_tag))
@@ -325,5 +345,10 @@ if pargs.html:
 	print_doc.append("</body>")
 	print_doc.append("</html>")
 
+# save the price table
+
+with open('prices.txt','w') as f:
+	for symbol in price_table:
+		printer.print_entries([price_table[symbol][k] for k in price_table[symbol]],file=f)
 
 print('\n'.join(print_doc))

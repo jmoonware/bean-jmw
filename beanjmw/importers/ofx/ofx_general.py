@@ -316,7 +316,7 @@ class Importer(ImporterProtocol):
 			)
 			postings[1]=p1._replace(
 				account = ':'.join([self.account_name,sec_account]),
-				units = Amount(qty,self.currency),
+				units = Amount(qty,sec_currency),
 				price = Amount(prc,self.currency),
 				meta = meta, 
 			)

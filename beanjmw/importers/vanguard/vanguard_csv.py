@@ -1,4 +1,6 @@
-# custom importer to load Etrade CSV brokerage account history
+# custom importer to load Vanguard CSV brokerage account history
+# This uses files scraped from the PDF reports (with some hand-editing)
+# is isn't really useful as a general Vanguard importer (use the ofx files) 
 
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
@@ -11,44 +13,50 @@ from datetime import datetime as dt
 # remove these chars as Beancount accounts can't have them
 quicken_category_remove=[' ','\'','&','-','+','.']
 
-# ETrade has a more descriptive TransactionType col that doesn't easily map
-# to QIF actions...
 transaction_types={
-'Adjustment', # at zero cost
-'Bought',
-'Direct Debit', 
-'Dividend', # could be LT, ST, etc.
-'Fee',
-'Interest',
-'Other', # appear to be cancelling pairs of share sales/buys
-'Reorganization', # mutual funds changing symbol
-'Sold',
+'Buy',
+'Dividend',
+'Conversion',
+'Reinvestment',
+'Transfer (incoming)',
 'Transfer',
-'Wire',
+'Capital gain (LT)',
+'Capital gain (ST)',
+'Reinvestment (LT gain)',
+'Reinvestment (ST gain)',
 }
 
-# in the Description field, at least since 2021 
-# Does not work for previous years!
-investment_actions={
-'L/T CAPITAL GAIN':'CGLong',
-'S/T CAPITAL GAIN':'CGShort',
-'REINVEST':'Div',
+transaction_acct={
+'Dividend':'Div', 
+'Reinvestment':'Div', 
+'Reinvestment (LT gain)':'CGLong',
+'Reinvestment (ST gain)':'CGShort',
 }
+
+skip_zeros=[
+'Transfer (incoming)',
+'Dividend',
+'Capital gain (LT)',
+'Capital gain (ST)',
+]
 
 default_open_date='2000-01-01'
 
-etrade_cols = [
-'TransactionDate','TransactionType','SecurityType','Symbol','Quantity','Amount','Price','Commission','Description',
+vanguard_cols = [
+'SettlementDate','TradeDate','Symbol','Description','TransactionType','Quantity','Price','Amount',
 ]
 
 from collections import namedtuple
-EtradeRow = namedtuple('EtradeRow',etrade_cols)
+VanguardRow = namedtuple('VanguardRow',vanguard_cols)
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,currency='USD'):
+	def __init__(self,account_name,currency='USD',account_number=None):
 		self.account_name=account_name
 		self.acct_tok=self.account_name.split(':')[-1]
-		self.acct_tail=self.acct_tok[len(self.acct_tok)-4:] 
+		if account_number:
+			self.acct_tail=self.acct_number[-4:] 
+		else: # take from name
+			self.acct_tail=self.acct_tok[-4:] 
 		self.currency=currency
 		self.account_currency={} # added as discovered
 		super().__init__()
@@ -65,15 +73,13 @@ class Importer(ImporterProtocol):
 			head_lines=file.head(num_bytes=100000).split('\n')
 			found=False
 			ln=0
-			while ln < len(head_lines):
-				if 'For Account' in head_lines[ln]:
+			if self.acct_tail in file.name:
+				while ln < len(head_lines):
 					toks=head_lines[ln].split(',')
-					if len(toks) > 1:
-						fa=toks[1]
-						if fa[len(fa)-4:]==self.acct_tail:
-							found=True
-							break
-				ln+=1
+					if vanguard_cols[0] in toks[0]: # found first header
+						found=True
+						break
+					ln+=1
 			return found
 		else:
 			 return False
@@ -142,26 +148,16 @@ class Importer(ImporterProtocol):
 
 	def get_transactions(self,table):
 		entries=[]
-		for fr in map(EtradeRow._make,table): 
+		for fr in map(VanguardRow._make,table): 
 			meta=new_metadata(self.account_name, 0)
 			# KLUDGE: Fix amounts without decimal point
 			nfr=fr._replace() # make a copy
 			if not '.' in fr.Amount:
 				namt = fr.Amount+".00"
 				nfr = fr._replace(Amount=namt)
-			# KLUDGE: Actual date may be in action!
-			# DON'T replace date - the record date is used in the scrape file
-			# Dedup won't work otherwise
-			if 'RECORD' in fr.Description:
-				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{2}",fr.Description)
-#				nfr = nfr._replace(TransactionDate = dm[0])
-			# FIXME: this assumes there is another ReinvDiv record
-			# Note that we lose the S,L/T Cap Gain in the Description field!
-			# That is, each Dividend just looks like it came from Div
-			# Going forward, this is only needed for deduplication of qif
-			# ReinvDiv records
-			if fr.TransactionType=="Dividend" and Decimal(fr.Quantity)==0:
-				sys.stderr.write("Skipping dividend {0} {1}\n".format(fr.TransactionDate,fr.Symbol))
+			# Note: this assumes there is another record for reinvesting
+			if fr.TransactionType=='Transfer' or (fr.TransactionType in skip_zeros and len(fr.Price)==0):
+				sys.stderr.write("Skipping {0} {1} {2}\n".format(fr.TransactionType,fr.TradeDate,fr.Symbol))
 				continue
 			# filter out transactions that are to be ignored
 			if "IGNORE" in fr.Description:
@@ -169,9 +165,9 @@ class Importer(ImporterProtocol):
 			narration_str=" / ".join([fr.Description,fr.TransactionType])
 			tn=Transaction(
 				meta=meta,
-				date=dt.date(dt.strptime(nfr.TransactionDate,'%m/%d/%y')),
+				date=dt.date(dt.strptime(nfr.TradeDate,'%m/%d/%Y')),
 				flag="*",
-				payee="Etrade",
+				payee="Vanguard csv",
 				narration=narration_str,
 				tags=EMPTY_SET,
 				links=EMPTY_SET,
@@ -187,12 +183,12 @@ class Importer(ImporterProtocol):
 		# try to find investment action
 		# switch to use QIF format names
 		# TODO: Re-use code in qif importer
-		etrade_action=None
+		vanguard_action=None
 		if fr.TransactionType in transaction_types:
-			etrade_action=fr.TransactionType
+			vanguard_action=fr.TransactionType
 
 		# unsure what we should do here so bail
-		if not etrade_action:
+		if not vanguard_action:
 			sys.stderr.write("Unknown inv action: {0} in {1}\n".format(fr.TransactionType,fr))
 			return(postings)
 	
@@ -233,7 +229,7 @@ class Importer(ImporterProtocol):
 		p1=postings[1] 
 	
 		# deal with each type of investment action:
-		if etrade_action == 'Bought':
+		if vanguard_action in ['Buy','Conversion']:
 			acct = ":".join([self.account_name, sec_account])
 			meta=new_metadata(acct, 0)
 			amt=Decimal(0)
@@ -242,7 +238,7 @@ class Importer(ImporterProtocol):
 			qty=Decimal(0.000000001)
 			if fr.Quantity:
 				qty=Decimal(fr.Quantity)
-			prc=Decimal(0)
+			prc=Decimal('0.00')
 			if len(fr.Price)>0:
 				prc=Decimal(fr.Price)
 				tprc=abs(amt/qty)
@@ -256,14 +252,11 @@ class Importer(ImporterProtocol):
 				meta = meta,
 			)
 			aname='Cash'
-			# shares in came from a share exchange somewhere else
-			if etrade_action == 'ShrsIn': # KLUDGE
-				aname = 'Transfer'
 			postings[1]=p1._replace(
 				account = ":".join([self.account_name,aname]),
-				units = Amount(-abs(amt),self.currency)
+				units = Amount(amt,self.currency)
 			)
-		elif etrade_action=='Sold': 
+		elif vanguard_action=='Sold': 
 			commission=Decimal(0)
 			if len(fr.Commission)>0:
 				commission=Decimal(fr.Commission)
@@ -304,19 +297,8 @@ class Importer(ImporterProtocol):
 					meta=None,
 				)
 			)
-		elif etrade_action == 'Dividend':
-			# might be Long, Short, or reinvest
-			etrade_div_action='Div'
-			# FIXME: this is broken at the moment 
-			# Anything other than REINV is filtered before we get here
-			for tok in investment_actions:
-				if tok in fr.Description:
-					etrade_div_action=investment_actions[tok]	
-			# Check for 2020 and earlier transactions
-			# Here, Dividend has negative Amount and positive Quantity
-			# means it was a "Buy" i.e. a reinvest
-#			if Decimal(fr.Quantity)>0 and Decimal(fr.Amount) < 0:
-#				etrade_div_action = 'Div'
+		elif vanguard_action in transaction_acct:
+			from_acct=transaction_acct[vanguard_action]
 			price_amt = None
 			account = ":".join([self.account_name,sec_account])
 			units=Amount(Decimal(fr.Quantity),sec_currency)
@@ -329,10 +311,10 @@ class Importer(ImporterProtocol):
  				price = price_amt,
 			)
 			postings[1]=p1._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),sec_currency,"Div"]),
+				account = ":".join([self.account_name.replace("Assets","Income"),sec_currency,from_acct]),
 				units = Amount(Decimal(fr.Amount),self.currency)
 			)
-		elif etrade_action == 'Interest':
+		elif vanguard_action == 'Interest':
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name.replace('Assets','Income'),"IntInc"]),
 				units=Amount(-Decimal(fr.Amount),self.currency)
@@ -341,27 +323,18 @@ class Importer(ImporterProtocol):
 				account = self.account_name + ":Cash",
 				units = Amount(Decimal(fr.Amount),self.currency)
 			)
-		elif etrade_action == 'Fee':
+		elif vanguard_action == 'Fee':
 			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Expenses'),etrade_action]),
+				account = ":".join([self.account_name.replace('Assets','Expenses'),vanguard_action]),
 				units=Amount(-Decimal(fr.Amount),self.currency)
 			)
 			postings[1]=p1._replace(
 				account = self.account_name + ":Cash",
 				units = Amount(Decimal(fr.Amount),self.currency)
 			)
-		elif etrade_action in ['Transfer','Wire','Direct Debit']: 
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name,"Cash"]),
-				units=Amount(Decimal(fr.Amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name, "Transfer"]),
-				units=Amount(-Decimal(fr.Amount),sec_currency),
-			)
 		# Adjustment just removes or adds shares at 0 cost - basis 
 		# needs to be entered manually (maybe a way to get this?)
-		elif etrade_action in ['Adjustment','Other','Reorganization']:
+		elif vanguard_action in ['Adjustment','Other','Reorganization']:
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name,sec_currency]),
 				units=Amount(Decimal(fr.Quantity),sec_currency),
@@ -376,7 +349,7 @@ class Importer(ImporterProtocol):
 				meta = meta,
 			)
 		else:
-			sys.stderr.write("Unknown investment action {0}\n".format(etrade_action))
+			sys.stderr.write("Unknown investment action {0}\n".format(vanguard_action))
 	
 		return(postings)
 
@@ -384,25 +357,25 @@ class Importer(ImporterProtocol):
 	def create_table(self,lines):
 		""" Returns a list of (mostly) unparsed string tokens
 	        each item in the table is a list of tokens exactly 
-			len(etrade_cols) long
+			len(vanguard_cols) long
 			Arguments:
 				lines: list of raw lines from csv file
 		"""
 		table=[]
 		nl=0
-		while nl < len(lines):
-			if "TransactionDate" in lines[nl]:
+		while nl < len(lines): # skip blanks, look for first col header
+			if vanguard_cols[0] in lines[nl]:
 				break
 			nl+=1
 
 		# make sure the columns haven't changed... 
-		is_etrade=True
-		cols=[c.strip() for c in lines[nl].split(',')]
-		for c,fc in zip(cols,etrade_cols):
+		is_vanguard=True
+		cols=[c.strip().replace('\'','').replace('"','') for c in lines[nl].split(',')]
+		for c,fc in zip(cols,vanguard_cols):
 			if c!=fc:
-				is_etrade=False
+				is_vanguard=False
 				break
-		if not is_etrade or len(cols)!=len(etrade_cols):
+		if not is_vanguard or len(cols)!=len(vanguard_cols):
 			sys.stderr.write("Bad format {0}".format(cols))
 			return(table)
 	
@@ -411,7 +384,7 @@ class Importer(ImporterProtocol):
 			ctoks=l.split(',')
 			if len(ctoks) > 0 and len(ctoks[0])==0: # filter blank date
 				continue
-			if len(ctoks) >= len(etrade_cols):
-				table.append([c.strip() for c in ctoks[:len(etrade_cols)]])
+			if len(ctoks) >= len(vanguard_cols):
+				table.append([c.strip().replace('\'','') for c in ctoks[:len(vanguard_cols)]])
 
 		return(table)
