@@ -25,7 +25,7 @@ def is_check(e):
 	"""
 	cn = None
 	if type(e)==Transaction:
-		checkno_match = re.search('CHECK ('+numeric_regex+')',e.narration.upper())
+		checkno_match = re.search('CHECK\s+('+numeric_regex+')',e.narration.upper())
 		if checkno_match:
 			cn=int(checkno_match.groups()[0])
 	return(cn)

@@ -59,18 +59,7 @@ pargs=ap.parse_args(sys.argv[1:])
 
 entries,errors,config=load_file(pargs.filename)
 # first thing - create price table
-price_table={}
-for e in filter(lambda e: type(e)==Price,entries):
-	if "__implicit_prices__" in e.meta:
-		continue
-	if not e.currency in price_table:
-		price_table[e.currency]={}
-	# don't overwrite entries without cache_timeout_days
-	if not e.date in price_table[e.currency] or (e.date in price_table[e.currency] and 'cache_timeout_days' in e.meta):
-		price_table[e.currency][e.date]=e
-# now sort the prices by date, once
-for c in price_table:
-	price_table[c]=dict(sorted(price_table[c].items()))
+price_table=ds.create_price_table(entries)
 
 acct_match=pargs.type
 if len(pargs.account) > 0:
@@ -165,7 +154,7 @@ while ci < len(toks):
 	if clevel >= len(toks[ci]):
 		sys.stderr.write("Warning: Level {0} exceeds depth of {1}\n".format(clevel,':'.join(toks[ci])))
 		clevel=len(toks[ci])-1
-	if toks[ci][clevel] == 'US': # don't group by country
+	if toks[ci][clevel] == 'US' or toks[ci][clevel] == 'UK': # don't group by country
 		tlevel=clevel+1
 	else:
 		tlevel=clevel
@@ -234,7 +223,7 @@ if pargs.html:
 	print_doc.append("}")
 	print_doc.append("th, td {")
 	print_doc.append("  border: 1px #dddddd;")
-	print_doc.append("  text-align: right;")
+	print_doc.append("  text-align: left;")
 	print_doc.append("  padding: 8px;")
 	print_doc.append("}")
 	print_doc.append("tr.subheader {")
@@ -245,9 +234,13 @@ if pargs.html:
 	print_doc.append("  padding: 4px;")
 	print_doc.append("  text-align: left;")
 	print_doc.append("}")
+	print_doc.append("@media print {")
+	print_doc.append(".pagebreak { page-break-before: always; }")
+	print_doc.append("}")
 	print_doc.append("</style></head>")
 	print_doc.append("<body>")
-	dfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2:.2f}</td><td>{3}</td><td>{4:1.2f}</td></tr>'
+	dfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2:.2f}</td><td>{3}</td><td><b>{4:1.2f}</b></td></tr>'
+	dlfmt='<tr><td>{0}</td><td>{1}</td><td></td><td></td><td>{2}</td></tr>'
 	tfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2}</td><td>{3:.2f}</td></tr>'
 	print_doc.append("<h1>{0} Report {1}</h1>".format(pargs.type,dt.date(dt.now()).isoformat()))
 	print_doc.append("<h2>Period from {0} to {1}</h2>".format(pargs.start_date,pargs.end_date))
@@ -260,6 +253,7 @@ if pargs.html:
 	print_doc.append("<tr><th>Account</th><th>Units</th><th>Currency</th><th>{}</th></tr>".format(report_currency))
 else:
 	dfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}\t{4:7.2f}'
+	dlfmt='\t{0}\t{1}\t{2}'
 	tfmt='{0}\t{1:.2f}\t{2}\t{3:.2f}'
 	print_doc.append("Account\tUnits\tCurrency\t{}".format(report_currency))
 
@@ -286,7 +280,7 @@ if pargs.html:
 	print_doc.append("</td>")
 
 fig, ax = plt.subplots()
-fig.set_size_inches(5,9)
+fig.set_size_inches(5,7)
 idx = np.argsort(plot_values)[::-1]
 if pargs.type=='Assets':
 	mult=1e-3
@@ -317,8 +311,10 @@ if pargs.print_totals:
 		print_doc.append("TOTAL {0}\t{1:.2f}".format(c,tot[c]))
 
 # details tables
+max_narration=50 # characters long, or pad to this value
 if pargs.details:
 	if pargs.html:
+		print_doc.append('<div class="pagebreak"></div>')
 		print_doc.append('<table>')
 		print_doc.append('<tr><th class="subheader">Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
 		afmt = '<tr class="subheader"><th class="subheader">{}</th></tr>'
@@ -328,6 +324,14 @@ if pargs.details:
 		print_doc.append(afmt.format(a))
 		for st in report_table[a][2]:
 			print_doc.append(dfmt.format(st[0],st[1],st[2],st[3],st[4]))
+			# re-query to get actual ledger entries
+			qs="SELECT date, narration, change FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}$' ORDER BY date".format(pargs.start_date,pargs.end_date,st[0])
+			qr=query.run_query(entries,config,qs,()) 
+			for r in qr[1]:
+				narr_str=r.narration
+				if len(r.narration) < max_narration:
+					narr_str = r.narration+' '*(max_narration-len(r.narration))
+				print_doc.append(dlfmt.format(r.date,narr_str[:max_narration],r.change[0][0]))
 	if pargs.html:
 		print_doc.append('</table>')
 		
@@ -337,7 +341,7 @@ if pargs.print_ledger:
 	cols={'date':0,'narration':1,'account':2,'position':3}
 	qs="SELECT "+','.join(cols.keys())+" FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}' ORDER BY account,date".format(pargs.start_date,pargs.end_date,pargs.account)
 
-	qr=query.run_query(entries,config,qs,()) # ,numberify=True)
+	qr=query.run_query(entries,config,qs,()) 
 	for r in qr[1]:
 		print_doc.append('\t'.join([str(r[cols[k]]) for k in cols]))
 

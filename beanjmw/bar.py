@@ -13,13 +13,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse 
 import sys
+from beancount.loader import load_file
 
 ap=argparse.ArgumentParser()
 ap.add_argument('-f','--filename',required=True,help='Assets (tsv, Account,Units,Currency columns')
 ap.add_argument('-af','--advisor_fee',required=False,help='Percent Fee for AUM (for an advisor), default 0',default=0)
 ap.add_argument('-tc','--top_holding_cutoff',required=False,help='Perc cutoff for by holding table (default 75)',default=75)
+ap.add_argument('-p','--price_file',required=False,help='Latest price directive file',default='prices.txt')
+ap.add_argument('-rc','--report_currency',required=False,help='Report currency (default USD)',default='USD')
 
 pargs=ap.parse_args(sys.argv[1:])
+
+try:
+	entries, errors, config = load_file(pargs.price_file)
+except:
+	sys.stderr.write('Could not load file {0}\n'.format(pargs.price_file))
+	entries = []
+
+price_table = ds.create_price_table(entries)
 
 yrs_held=7 # years for sales load to amortize
 
@@ -35,7 +46,7 @@ by_account={}
 
 for acct, symbol,units in zip(holdings['Account'], holdings['Currency'],holdings['Units']):
 	if not symbol in symbol_info:
-		if symbol == 'USD': # just cash
+		if symbol == pargs.report_currency: # just cash
 			symbol_info[symbol]={}
 			symbol_info[symbol]['QUOTE']=1.
 			symbol_info[symbol]['QUOTE_TYPE']='CASH'
@@ -47,18 +58,21 @@ for acct, symbol,units in zip(holdings['Account'], holdings['Currency'],holdings
 			symbol_info[symbol]['SL']=0
 			symbol_info[symbol]['DL']=0
 			symbol_info[symbol]['HOLDINGS']={}
-			symbol_info[symbol]['HOLDINGS']['name']=['USD']
+			symbol_info[symbol]['HOLDINGS']['name']=[pargs.report_currency]
 			symbol_info[symbol]['HOLDINGS']['perc']=[100.]
 		else:
-			symbol_info[symbol] = ds.get_all(symbol)
+			symbol_info[symbol] = ds.get_all(symbol,prices=price_table)
+	amt = units*symbol_info[symbol]['QUOTE']
+	if 'QUOTE_CURRENCY' in symbol_info[symbol]:
+		amt = amt*ds.get_exchange_rate(symbol_info[symbol]['QUOTE_CURRENCY'], pargs.report_currency)
 	if 'TOTAL' in symbol_info[symbol]:
-		symbol_info[symbol]['TOTAL']+=units*symbol_info[symbol]['QUOTE']
+		symbol_info[symbol]['TOTAL']+=amt
 	else:
-		symbol_info[symbol]['TOTAL']=units*symbol_info[symbol]['QUOTE']
+		symbol_info[symbol]['TOTAL']=amt
 	if acct in by_account:
-		by_account[acct]+=units*symbol_info[symbol]['QUOTE']
+		by_account[acct]+=amt
 	else:
-		by_account[acct]=units*symbol_info[symbol]['QUOTE']
+		by_account[acct]=amt
 
 
 # Now generate some reporting!
@@ -81,7 +95,7 @@ h_tot=[]
 for s in symbol_info:
 	gt+=symbol_info[s]['TOTAL']
 	# FIXME: Assumes all non-cash is subject to advisor fee
-	if s!='USD': 
+	if s!=pargs.report_currency:
 		gt_AUM+=symbol_info[s]['TOTAL']
 	if 'Sector Weightings (%)' in symbol_info[s]['YF_TABLES']:
 		sw=symbol_info[s]['YF_TABLES']['Sector Weightings (%)'].values()

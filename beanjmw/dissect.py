@@ -15,6 +15,10 @@ headers = {
 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0"
 }
 
+
+cache_dir='yaml'
+cache_timeout_days=3
+
 symbol='VONG' # ETF
 symbol='SPMD' # ETF
 #symbol='FXAIX' # MF
@@ -30,24 +34,39 @@ mf_holding_url='/'.join([mf_url,'holding'])
 etf_sector_url='https://etfdb.com/etf/{}/#charts'
 yf_holding_url='https://finance.yahoo.com/quote/{}/holdings'
 
+def create_price_table(entries):
+	# first thing - create price table
+	price_table={}
+	for e in filter(lambda e: type(e)==Price,entries):
+	    if "__implicit_prices__" in e.meta:
+	        continue
+	    if not e.currency in price_table:
+	        price_table[e.currency]={}
+	    # don't overwrite entries without cache_timeout_days
+	    if not e.date in price_table[e.currency] or (e.date in price_table[e.currency] and 'cache_timeout_days' in e.meta):
+	        price_table[e.currency][e.date]=e
+	# now sort the prices by date, once
+	for c in price_table:
+	    price_table[c]=dict(sorted(price_table[c].items()))
+	return(price_table)
+	
 # exchange rate URL
 exchange_rate_url='https://api.exchangerate-api.com/v4/latest/'
 
-cache_dir='yaml'
-
 def get_exchange_rate(from_curr,to_curr):
-	r = requests.get(exchange_rate_url+from_curr.upper())
-	data = r.json()
 	ef = 1
-	if data and 'rates' in data:
-		rates=data['rates']
-		if from_curr.upper() in rates and to_curr in rates:
-			ef = rates[to_curr]
-			# KLUDGE for pence vs Pound
-			if from_curr[-1].islower():
-				ef=0.01*ef
-		else:
-			sys.write.stderr("Can't get exchange rate between {0} and {1}\n".format(from_curr,to_curr))
+	if from_curr != to_curr:
+		r = requests.get(exchange_rate_url+from_curr.upper())
+		data = r.json()
+		if data and 'rates' in data:
+			rates=data['rates']
+			if from_curr.upper() in rates and to_curr in rates:
+				ef = rates[to_curr]
+				# KLUDGE for pence vs Pound
+				if from_curr[-1].islower():
+					ef=0.01*ef
+			else:
+				sys.write.stderr("Can't get exchange rate between {0} and {1}\n".format(from_curr,to_curr))
 	return(ef)
 
 def get_page(url):
@@ -58,45 +77,53 @@ def get_page(url):
 	return(r)
 
 def get_yahoo(symbol):
-	r = get_page(yf_holding_url.format(symbol))
-	soup = BS(r.text,features='lxml')
-	tabs = soup.find_all('div',{'class': 'Mb(25px)'}) 
-	row_pat = '<span>([a-z /A-Z]+?)</span>'
-	data_pat = '<span.*?>([0-9]+\.*[0-9]*%*|\s*N/A\s*)</span>'
-	tables=[]
-	titles=[]
 	ret={}
-	for t in tabs:
-		tables.append([])
-		tit_pat='<h3>(.+?)</h3>'
-		m = re.search(tit_pat,str(t))
-		if m:
-			n = re.search('<span>(.+?)</span>',m.group(1))
-			titles.append(n.group(1))
-		rows = t.findChildren('div')
-		for row in rows:
-			els = row.findChildren('span',recursive=False)
-			if len(els) > 0:
-				m = re.search(row_pat,str(els[0]))
-				d = re.search(data_pat,str(els[-1])) 
-				if m and d:
-					tables[-1].append([m.group(1),d.group(1)])
-
-	if len(titles)==len(tables) and len(titles)>0:
-		for t,tab in zip(titles,tables):
-			ret[t]={}
-			for dp in tab:
-				ret[t][dp[0]]=dp[1]
+	try:
+		r = get_page(yf_holding_url.format(symbol))
+		soup = BS(r.text,features='lxml')
+		tabs = soup.find_all('div',{'class': 'Mb(25px)'}) 
+		row_pat = '<span>([a-z /A-Z]+?)</span>'
+		data_pat = '<span.*?>([0-9]+\.*[0-9]*%*|\s*N/A\s*)</span>'
+		tables=[]
+		titles=[]
+		for t in tabs:
+			tables.append([])
+			tit_pat='<h3>(.+?)</h3>'
+			m = re.search(tit_pat,str(t))
+			if m:
+				n = re.search('<span>(.+?)</span>',m.group(1))
+				titles.append(n.group(1))
+			rows = t.findChildren('div')
+			for row in rows:
+				els = row.findChildren('span',recursive=False)
+				if len(els) > 0:
+					m = re.search(row_pat,str(els[0]))
+					d = re.search(data_pat,str(els[-1])) 
+					if m and d:
+						tables[-1].append([m.group(1),d.group(1)])
+	
+		if len(titles)==len(tables) and len(titles)>0:
+			for t,tab in zip(titles,tables):
+				ret[t]={}
+				for dp in tab:
+					ret[t][dp[0]]=dp[1]
+	except Exception as ex:
+		sys.stderr.write("get_yahoo: can't get info for {0}:{1}\n".format(symbol,ex))
 	return(ret)			
 
 # splits on double quote, comma, double quote with optional whitespace
 el_pat = '" *, *"'
 
 def get_holdings_table(symbol,yf_ticker):
-	if 'quoteType' in yf_ticker.info:
-		qt=yf_ticker.info['quoteType']
-	else:
-		qt = 'UNKNOWN'
+	try:
+		if yf_ticker and 'quoteType' in yf_ticker.info:
+			qt=yf_ticker.info['quoteType']
+		else:
+			qt = 'UNKNOWN'
+	except Exception as ex:
+		sys.stderr.write("get_holdings_table: no info {0}:{1}\n".format(symbol,ex))
+		qt='UNKNOWN'
+
 	holdings_table={}
 	holdings_table['symbol']=[]
 	holdings_table['name']=[]
@@ -134,70 +161,73 @@ def get_holdings_table(symbol,yf_ticker):
 		holdings_table['perc']=[100.]
 		return(holdings_table)
 
-	r = get_page(url)
-	tdat=''
-	title_data=''
-	title_col_toks = []
-	title_pattern='document.table_title(.+?);'
-	title_col_pattern='\{\s*"title":\s*"(.+?)".+?\}'
-	m =re.search(title_pattern, r.text.replace('\n',' '))
-	if m: 
-		title_data=m.group(1)
-		title_col_toks = re.findall(title_col_pattern,title_data)
-		if 'Weight' in title_col_toks:
-			perc_col = title_col_toks.index('Weight')
-		if 'Symbol' in title_col_toks:
-			symbol_col = title_col_toks.index('Symbol')
-		if 'Company Name' in title_col_toks:
-			name_col = title_col_toks.index('Company Name')
-		# bond funds don't have symbols, just Securities
-		if 'Security' in title_col_toks:
-			symbol_col = title_col_toks.index('Security')
-			name_col = title_col_toks.index('Security')
-
-#	print(title_data,title_col_toks)
-	for l in r.text.split('\n'):
-		if re.match(tab_pat,l.strip()):
-			tdat=l
-	perc=[]
-	if len(tdat)>0:
-		toks=tdat.split('[')[2:] # each table line
-		for tline in toks:
-			ptoks =  re.split(el_pat,tline)
-			if 'NA' in ptoks[perc_col]:
-				perc.append(0.)
-			else:
-				perc.append(float(ptoks[perc_col].replace('%','')))
-		raw_symbols=[x.split(',')[symbol_col] for x in toks]
-		symbols=[]
-		for rs in raw_symbols:
-			m = re.findall(sym_pat, rs )
-			if m:
-				symbols.append(m[0])
-			else:
-				symbols.append(rs.strip().replace('"',''))
-		raw_names=[re.split(el_pat,x)[name_col] for x in toks]
-		names=[]
-		for rn in raw_names:
-			m = re.findall(name_pat,rn)
-			if m:
-				names.append(m[0])
-			else:
-				names.append(rn.strip().replace('"',''))
-
-	for n,s,p in zip(names,symbols,perc):
-#		print('\t'.join([s,"{0:.3f}".format(p),n]))
-		holdings_table['symbol'].append(s)
-		holdings_table['name'].append(n)
-		holdings_table['perc'].append(p)
+	try:
+		r = get_page(url)
+		tdat=''
+		title_data=''
+		title_col_toks = []
+		title_pattern='document.table_title(.+?);'
+		title_col_pattern='\{\s*"title":\s*"(.+?)".+?\}'
+		m =re.search(title_pattern, r.text.replace('\n',' '))
+		if m: 
+			title_data=m.group(1)
+			title_col_toks = re.findall(title_col_pattern,title_data)
+			if 'Weight' in title_col_toks:
+				perc_col = title_col_toks.index('Weight')
+			if 'Symbol' in title_col_toks:
+				symbol_col = title_col_toks.index('Symbol')
+			if 'Company Name' in title_col_toks:
+				name_col = title_col_toks.index('Company Name')
+			# bond funds don't have symbols, just Securities
+			if 'Security' in title_col_toks:
+				symbol_col = title_col_toks.index('Security')
+				name_col = title_col_toks.index('Security')
+	
+	#	print(title_data,title_col_toks)
+		for l in r.text.split('\n'):
+			if re.match(tab_pat,l.strip()):
+				tdat=l
+		perc=[]
+		if len(tdat)>0:
+			toks=tdat.split('[')[2:] # each table line
+			for tline in toks:
+				ptoks =  re.split(el_pat,tline)
+				if 'NA' in ptoks[perc_col]:
+					perc.append(0.)
+				else:
+					perc.append(float(ptoks[perc_col].replace('%','')))
+			raw_symbols=[x.split(',')[symbol_col] for x in toks]
+			symbols=[]
+			for rs in raw_symbols:
+				m = re.findall(sym_pat, rs )
+				if m:
+					symbols.append(m[0])
+				else:
+					symbols.append(rs.strip().replace('"',''))
+			raw_names=[re.split(el_pat,x)[name_col] for x in toks]
+			names=[]
+			for rn in raw_names:
+				m = re.findall(name_pat,rn)
+				if m:
+					names.append(m[0])
+				else:
+					names.append(rn.strip().replace('"',''))
+	
+		for n,s,p in zip(names,symbols,perc):
+	#		print('\t'.join([s,"{0:.3f}".format(p),n]))
+			holdings_table['symbol'].append(s)
+			holdings_table['name'].append(n)
+			holdings_table['perc'].append(p)
 
 #	print(len(symbols),len(perc),len(names))
 #	print(sum(perc))
+	except Exception as ex:
+		sys.stderr.write("Problem getting holdings {0}:{1}\n".format(symbol,ex))
 	
 	return(holdings_table)
 
 def dump_raw(r,tag):
-	with open('{}.txt'.format(tag),'w') as f:
+	with open(os.path.join(cache_dir,'{}.txt'.format(tag)),'w') as f:
 		f.writelines(r.text)
 
 def parse_raw_table(raw):
@@ -217,13 +247,29 @@ def parse_raw_table(raw):
 
 info_pats = ['Expense Ratio','SEC Yield', 'Dividend \(Yield\)']
 
-def get_info_table(symbol, yf_ticker):
-	summary_table={}
-	if 'quoteType' in yf_ticker.info:
-		qt=yf_ticker.info['quoteType']
-	else:
-		sys.stderr.write("get_info_table: no info for {0}\n".format(symbol))
-		qt="UNKNOWN"
+def get_info_table(symbol, yf_ticker,summary_table=None):
+	try:
+		if yf_ticker and 'quoteType' in yf_ticker.info:
+			qt=yf_ticker.info['quoteType']
+		else:
+			sys.stderr.write("get_info_table: problem getting info for {0}\n".format(symbol))
+			qt="UNKNOWN"
+	except Exception as ex:
+		sys.stderr.write('get_info_table: no info for {0}: {1}\n'.format(symbol,ex))
+		qt='UNKNOWN'
+
+	# establish rational defaults as a template
+	# for some things the tables need to be filled by hand
+	if not summary_table:
+		summary_table={}
+	summary_table['CAT']='UNKNOWN'
+	summary_table['ER']=0
+	summary_table['SL']=0
+	summary_table['DL']=0
+	summary_table['DIV']=0
+	summary_table['SECT']={}
+	summary_table['QUOTE_TYPE']=qt
+
 	exp_table={}
 	fee_table={}
 	sector_table={}
@@ -265,21 +311,19 @@ def get_info_table(symbol, yf_ticker):
 		if m:
 #			print("Category: " + m.group(1))
 			summary_table['CAT']=m.group(1)
+		else: # guess from quote type(o)
+			summary_table['CAT']=qt
 		dump_raw(r,symbol)
 	# Expense Ratio
-	summary_table['ER']=0
 	if 'Expense Ratio' in exp_table:
 		summary_table['ER']=float(exp_table['Expense Ratio'].replace('%',''))
 	# Front load
-	summary_table['SL']=0
 	if 'Max Sales Load' in fee_table and fee_table['Max Sales Load']!='NA':
 		summary_table['SL']=float(fee_table['Max Sales Load'])
 	# Back load
-	summary_table['DL']=0
 	if 'Max Deferred Load' in fee_table and fee_table['Max Deferred Load']!='NA':
 		summary_table['DL']=float(fee_table['Max Deferred Load'])
 	# Dividends or Yield
-	summary_table['DIV']=0
 	if qt == 'EQUITY' or qt == 'MUTUALFUND' or qt =='MONEYMARKET':
 		if 'yield' in yf_ticker.info:
 			summary_table['DIV']=100*yf_ticker.info['yield']
@@ -290,7 +334,6 @@ def get_info_table(symbol, yf_ticker):
 			if m:
 				summary_table['DIV']=float(m.group(1))
 	# Sector table
-	summary_table['SECT']={}
 	if qt!='ETF':
 		if len(sector_table) > 0:
 			for s in sector_table:
@@ -318,7 +361,6 @@ def get_info_table(symbol, yf_ticker):
 
 	return(summary_table)
 
-cache_timeout_days=3
 
 def update_price_table(symbol,prc,prices):
 	# update price table
@@ -361,15 +403,17 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 	# TODO: don't store quotes in info cache	
 	info_table = check_cache(symbol)
 	if len(info_table) > 0 and 'QUOTE' in info_table and 'QUOTE_DATE' in info_table and 'QUOTE_CURRENCY' in info_table:
-		prc = Price(
-			{},
-			dt.date(dt.fromisoformat(info_table['QUOTE_DATE'])),
-			info_table['QUOTE_CURRENCY'],
-			Decimal(info_table['QUOTE']),
-		)
-		update_price_table(symbol,prc,prices)
-		return(prc)
-
+		file_date = dt.date(dt.fromisoformat(info_table['QUOTE_DATE']))
+		if (quote_date - file_date) < timedelta(cache_timeout_days):
+			prc = Price(
+				{},
+				dt.date(dt.fromisoformat(info_table['QUOTE_DATE'])),
+				symbol,
+				amount=Amount(Decimal(info_table['QUOTE']),info_table['QUOTE_CURRENCY']),
+			)
+			update_price_table(symbol,prc,prices)
+			return(prc)
+	
 	# either expired cache or no info
 	start_date=(quote_date-timedelta(days=cache_timeout_days)).isoformat()
 
@@ -417,9 +461,9 @@ def check_cache(symbol):
 			info_table=yaml.safe_load(f)
 	# if yaml file is recent, just return from cache
 	if 'QUOTE_DATE' in info_table:
-		last_quote_time=dt.fromisoformat(info_table['QUOTE_DATE'])
 		tzi=tz('US/Pacific')
 		right_now=tzi.localize(dt.now())
+		last_quote_time=tzi.localize(dt.fromisoformat(info_table['QUOTE_DATE']))
 		if right_now-timedelta(days=cache_timeout_days) < last_quote_time:
 			sys.stderr.write("Returning cache info for {}...\n".format(symbol))
 		else:
@@ -427,7 +471,7 @@ def check_cache(symbol):
 	return(info_table)
 
 # call this function on each symbol in portfolio
-def get_all(symbol,clobber=False):
+def get_all(symbol,clobber=True,prices=None):
 
 	info_table = check_cache(symbol)
 	if len(info_table) > 0:
@@ -436,15 +480,16 @@ def get_all(symbol,clobber=False):
 	# if we got here, have to reload information
 	sys.stderr.write("Gathering info for {}...\n".format(symbol))
 	tk = yf.ticker.Ticker(symbol)
-	info_table = get_info_table(symbol, tk)
-	latest_quote=quote(symbol,tk)
+	latest_quote=quote(symbol,tk,prices=prices)
 	info_table['QUOTE_DATE']=latest_quote.date.isoformat()
-	info_table['QUOTE']=latest_quote.amount[0]
+	info_table['QUOTE']=float(latest_quote.amount[0])
 	info_table['QUOTE_CURRENCY']=latest_quote.amount[1]
-	info_table['HOLDINGS']=get_holdings_table(symbol, tk)
-	if 'quoteType' in tk.info:
-		info_table['QUOTE_TYPE']=tk.info['quoteType']
-	info_table['YF_TABLES']=get_yahoo(symbol)
+	try:
+		info_table = get_info_table(symbol, tk, info_table)
+		info_table['HOLDINGS']=get_holdings_table(symbol, tk)
+		info_table['YF_TABLES']=get_yahoo(symbol)
+	except Exception as ex:
+		sys.stderr.write("get_all: Can't get info on {0}:{1}\n".format(symbol,ex))
 
 	if not os.path.isdir(cache_dir):
 		os.makedirs(cache_dir)
