@@ -81,10 +81,14 @@ ba_tot=sum([v for v in by_account.values()])
 acct_len=max([int(len(k)) for k in by_account])
 fmt="{0:<"+str(acct_len)+"s}\t{1:8.2f}\t{2:3.2f}"
 print('\n'+'\t'.join(['Account','Total$','Total%']))
-for ba in by_account:
+# sort descending
+sidx = np.argsort(list(by_account.values()))[::-1]
+keys=list(by_account.keys())
+for i in sidx:
+	ba=keys[i]
 	print(fmt.format(ba,by_account[ba],100*by_account[ba]/ba_tot))
 
-basic_info={'Stocks':0,'Bonds':0,'Cash':0}
+basic_info={'Stocks':0,'Bonds':0,'Cash':0,'Real Estate':0}
 
 # normalization
 gt=0
@@ -97,7 +101,7 @@ for s in symbol_info:
 	# FIXME: Assumes all non-cash is subject to advisor fee
 	if s!=pargs.report_currency:
 		gt_AUM+=symbol_info[s]['TOTAL']
-	if 'Sector Weightings (%)' in symbol_info[s]['YF_TABLES']:
+	if 'YF_TABLES' in symbol_info[s] and 'Sector Weightings (%)' in symbol_info[s]['YF_TABLES']:
 		sw=symbol_info[s]['YF_TABLES']['Sector Weightings (%)'].values()
 		s_tot.append(sum([float(v.replace('%','')) for v in sw if v!='N/A']))
 	else:
@@ -106,7 +110,7 @@ for s in symbol_info:
 		cat = symbol_info[s]['CAT']
 	else:
 		cat = "UNK"
-	if 'Overall Portfolio Composition (%)' in symbol_info[s]['YF_TABLES']:
+	if 'YF_TABLES' in symbol_info[s] and 'Overall Portfolio Composition (%)' in symbol_info[s]['YF_TABLES']:
 		ctab=symbol_info[s]['YF_TABLES']['Overall Portfolio Composition (%)']
 		tot=0
 		for c in ['Stocks','Bonds']:
@@ -123,11 +127,19 @@ for s in symbol_info:
 			c='Cash'
 		elif symbol_info[s]['QUOTE_TYPE']=='CASH':
 			c='Cash'
+		else:
+			if cat=='Real Estate':
+				c='Real Estate'
 		basic_info[c]+=symbol_info[s]['TOTAL']
 
 #	print(s, s_tot[-1])
 	if 'HOLDINGS' in symbol_info[s]:
-		h_tot.append(sum([v for v in symbol_info[s]['HOLDINGS']['perc']]))
+		try:
+			h_tot.append(sum([v for v in symbol_info[s]['HOLDINGS']['perc']]))
+		except:
+			for v in symbol_info[s]['HOLDINGS']['perc']:
+				if type(v)==str:
+					sys.stderr.write('Problem with {0}: {1}\n'.format(s,v))
 
 # print(basic_info)
 bi_tot=sum([v for v in basic_info.values()])

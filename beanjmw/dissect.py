@@ -138,31 +138,11 @@ def get_holdings_table(symbol,yf_ticker):
 		sys.stderr.write("get_holdings_table: no info {0}:{1}\n".format(symbol,ex))
 		qt='UNKNOWN'
 
-	holdings_table={}
-	holdings_table['symbol']=[]
-	holdings_table['name']=[]
-	holdings_table['perc']=[]
-
-	# check for seperate csv file
-	holdings_csv_file = symbol+"_holdings.csv" 
-	if os.path.isfile(holdings_csv_file):
-		csv = pd.read_csv(holdings_csv_file)
-		# need name and perc cols
-		if 'name' in csv.columns and 'perc' in csv.columns:
-			for n,p in zip(csv['name'],csv['perc']):
-				for rc in replace_chars:
-					n=n.replace(rc,'')
-				holdings_table['name'].append(n.upper())
-				holdings_table['perc'].append(float(p))
-		else:
-			sys.stderr.write("Missing name, perc cols in {0}\n".format(holdings_csv_file))
-		# might have symbol column
-		if 'symbol' in csv.columns:
-			for s in csv['symbol']:
-				holdings_table['perc'].append(s)
-	
+	holdings_table=load_csv_holdings_table(symbol)	
+	# bail - we loaded from csv
+	if len(holdings_table['perc']) > 0:
 		return(holdings_table)
-	
+
 	if qt == 'ETF':
 		url = etf_holding_url.format(symbol)
 		tab_pat = 'etf_holdings\\.formatted_data'    
@@ -181,7 +161,7 @@ def get_holdings_table(symbol,yf_ticker):
 		name_col=5
 	elif qt == 'EQUITY': 
 		holdings_table['symbol']=[symbol]
-		holdings_table['name']=yf_ticker.info['longName']
+		holdings_table['name']=[yf_ticker.info['longName']]
 		holdings_table['perc']=[100.]
 		return(holdings_table)
 	elif qt == 'MONEYMARKET': 
@@ -272,14 +252,59 @@ def parse_raw_table(raw):
 		cols = re.findall('<td.*?>([\s\S]*?)</td',row.replace('\n',''))
 		alt_hd = re.findall('<h2.*?>([\s\S]*?)</h2',row.replace('\n',''))
 		if len(first_cols) > 0 and len(cols) > 0:
-			table[first_cols[0].replace('%','').strip()]=cols[0]
+			key=first_cols[0].replace('%','').strip()
+			if len(key)>0:
+				table[key]=cols[0]
 		elif len(cols)==2:
-			table[cols[0].replace('%','').strip()]=cols[1]
+			key=cols[0].replace('%','').strip()
+			if len(key)>0:
+				table[key]=cols[1]
 		elif len(alt_hd)==1:
-			table[alt_hd[0].strip()]=100.
+			key=alt_hd[0].strip()
+			if len(key)>0:
+				table[key]=100.
 	return(table)
 
 info_pats = ['Expense Ratio','SEC Yield', 'Dividend \(Yield\)']
+
+cat_LUT = {'MONEYMARKET':'Cash','EQUITY':'Stock'}
+
+# loads optional csv sector table
+def load_csv_sector_table(symbol,summary_table):
+	sector_csv_file = os.path.join(cache_dir,symbol + "_sectors.csv")
+	if os.path.isfile(sector_csv_file):
+		csv = pd.read_csv(sector_csv_file,names=['sector','perc'])
+		summary_table['SECT']={}
+		for s,p in zip(csv['sector'],csv['perc']): 
+			summary_table['SECT'][s]=float(p)
+	return
+
+# loads optional csv file
+def load_csv_holdings_table(symbol):
+
+	holdings_table={}
+	holdings_table['symbol']=[]
+	holdings_table['name']=[]
+	holdings_table['perc']=[]
+
+	# check for seperate csv file
+	holdings_csv_file = os.path.join(cache_dir,symbol+"_holdings.csv")
+	if os.path.isfile(holdings_csv_file):
+		csv = pd.read_csv(holdings_csv_file)
+		# need name and perc cols
+		if 'name' in csv.columns and 'perc' in csv.columns:
+			for n,p in zip(csv['name'],csv['perc']):
+				for rc in replace_chars:
+					n=n.replace(rc,'')
+				holdings_table['name'].append(n.upper())
+				holdings_table['perc'].append(float(p))
+		else:
+			sys.stderr.write("Missing name, perc cols in {0}\n".format(holdings_csv_file))
+		# might have symbol column
+		if 'symbol' in csv.columns:
+			for s in csv['symbol']:
+				holdings_table['symbol'].append(s)
+	return(holdings_table)
 
 def get_info_table(symbol, yf_ticker,summary_table=None):
 	try:
@@ -296,7 +321,10 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 	# for some things the tables need to be filled by hand
 	if not summary_table:
 		summary_table={}
-	summary_table['CAT']='UNKNOWN'
+	if qt in cat_LUT:
+		summary_table['CAT']=cat_LUT[qt] 
+	else:
+		summary_table['CAT']=qt # first guess
 	summary_table['ER']=0
 	summary_table['SL']=0
 	summary_table['DL']=0
@@ -308,6 +336,7 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 	fee_table={}
 	sector_table={}
 	stat_table={}
+	cat_table={}
 	if qt!='MONEYMARKET' and qt!='UNKNOWN': # bypass, use yfinance
 		sector_pat = r'<section id="mf_sector">([\S\s]*?)</section'
 		if qt == 'MUTUALFUND':
@@ -323,11 +352,13 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 			url = equity_url.format(symbol)
 		fee_pat = r'<section id="mf_fees">([\S\s]*?)</section'
 		stat_pat = r'<section id="mf_port_stat">([\S\s]*?)</section'
+		cat_pat = r'<section id="mf_allocation">([\S\s]*?)</section'
 		r = get_page(url)
 		raw_exp = re.search(exp_pat, r.text)	
 		raw_fee = re.search(fee_pat, r.text)	
 		raw_sector = re.search(sector_pat,r.text)
 		raw_stat = re.search(stat_pat,r.text)
+		raw_cat = re.search(cat_pat,r.text)
 		if raw_exp:
 			exp_table = parse_raw_table(raw_exp[0])
 #			print(exp_table)
@@ -340,13 +371,30 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 		if raw_stat:
 			stat_table = parse_raw_table(raw_stat[0])
 #			print(stat_table)
+		if raw_cat:
+			cat_table = parse_raw_table(raw_cat[0])
+#			print(cat_table)
+		if len(stat_table) > 0:
+			summary_table['STATS']=stat_table
+		if len(cat_table) > 0:
+			summary_table['CATEGORIES']=cat_table
 		cat_pat='<a.+?Categories.+?>.+?<a.+?>(.+?)</a'
 		m = re.search(cat_pat, r.text)
 		if m:
 #			print("Category: " + m.group(1))
 			summary_table['CAT']=m.group(1)
-		else: # guess from quote type(o)
-			summary_table['CAT']=qt
+		# use cat table instead
+		if len(cat_table) > 0:
+			# just take the max 
+			cat_max=0
+			for k in cat_table:
+				try:
+					cv = float(cat_table[k].replace('%',''))
+				except ValueError as ve:
+					cv = 0
+				if cv > cat_max:
+					cat_max=cv
+					summary_table['CAT']=k	
 		dump_raw(r,symbol)
 	# Expense Ratio
 	if 'Expense Ratio' in exp_table:
@@ -367,15 +415,11 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 			m = re.search('\((.+?)%\)',exp_table['Dividend (Yield)'])
 			if m:
 				summary_table['DIV']=float(m.group(1))
-	# Sector table
-	
+
+	# Sector table	
 	# look for associated file first
-	sector_csv_file = symbol + "_sectors.csv"
-	if os.path.isfile(sector_csv_file):
-		csv = pd.read_csv(sector_csv_file,names=['sector','perc'])
-		for s,p in zip(csv['sector'],csv['perc']): 
-			summary_table['SECT'][s]=float(p)
-	else: # look somewhere else
+	load_csv_sector_table(symbol,summary_table)
+	if len(summary_table['SECT'])==0: # look somewhere else
 		if qt!='ETF':
 			if len(sector_table) > 0:
 				for s in sector_table:
@@ -501,6 +545,12 @@ def check_cache(symbol):
 	if os.path.isfile(yaml_file):
 		with open(yaml_file,'r') as f:
 			info_table=yaml.safe_load(f)
+		# check for csv files here
+		holdings_table=load_csv_holdings_table(symbol)
+		if len(holdings_table['perc']) > 0:
+			info_table['HOLDINGS']=holdings_table
+		sector_table = load_csv_sector_table(symbol,info_table)
+
 	# if yaml file is recent, just return from cache
 	if 'QUOTE_DATE' in info_table:
 		tzi=tz('US/Pacific')
@@ -514,6 +564,10 @@ def check_cache(symbol):
 
 # call this function on each symbol in portfolio
 def get_all(symbol,clobber=True,prices=None):
+
+	# always make sure cache dir exists
+	if not os.path.isdir(cache_dir):
+		os.makedirs(cache_dir)
 
 	info_table = check_cache(symbol)
 	if len(info_table) > 0:
@@ -533,8 +587,6 @@ def get_all(symbol,clobber=True,prices=None):
 	except Exception as ex:
 		sys.stderr.write("get_all: Can't get info on {0}:{1}\n".format(symbol,ex))
 
-	if not os.path.isdir(cache_dir):
-		os.makedirs(cache_dir)
 	yaml_path = os.path.join(cache_dir,symbol+".yaml")
 	if not os.path.isfile(yaml_path) or clobber:
 		backup_file(yaml_path)
