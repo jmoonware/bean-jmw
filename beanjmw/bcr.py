@@ -54,12 +54,17 @@ ap.add_argument('-dt','--details',required=False,action='store_true',default=Fal
 ap.add_argument('-cl','--clobber',required=False,action='store_true',default=False,help='Overwrite default config file if set')
 ap.add_argument('-html','--html',required=False,action='store_true',default=False,help='Output in static html')
 ap.add_argument('-np','--no_plot',required=False,action='store_true',default=False,help='No interactive plot - just print and exit')
+ap.add_argument('-pf','--price_file',required=False,default='prices.txt',help='Beancount price directive file to use')
 
 pargs=ap.parse_args(sys.argv[1:])
 
 entries,errors,config=load_file(pargs.filename)
 # first thing - create price table
-price_table=ds.create_price_table(entries)
+if os.path.exists(pargs.price_file):
+	price_entries, errors, config = load_file(pargs.price_file)
+	price_table=ds.create_price_table(price_entries)
+else:
+	price_table=ds.create_price_table(entries)
 
 acct_match=pargs.type
 if len(pargs.account) > 0:
@@ -317,11 +322,15 @@ if pargs.details:
 		print_doc.append('<div class="pagebreak"></div>')
 		print_doc.append('<table>')
 		print_doc.append('<tr><th class="subheader">Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
-		afmt = '<tr class="subheader"><th class="subheader">{}</th></tr>'
+		afmt = '<tr class="subheader"><th class="subheader">{0}</th><td></td><td></td><td></td><td><b>{1:.2f}</b></td></tr>'
 	else:
-		afmt = '{0}'
+		afmt = '{0}\t\t\t\t{1:.2f}'
 	for a in report_table:
-		print_doc.append(afmt.format(a))
+		if len(report_table[a][2]) > 0:
+			tot=0
+			for st in report_table[a][2]:
+				tot+=st[4]
+			print_doc.append(afmt.format(a,tot))
 		for st in report_table[a][2]:
 			print_doc.append(dfmt.format(st[0],st[1],st[2],st[3],st[4]))
 			# re-query to get actual ledger entries
@@ -351,7 +360,9 @@ if pargs.html:
 
 # save the price table
 
-with open('prices.txt','w') as f:
+# clobber existing file
+ds.backup_file(pargs.price_file)
+with open(pargs.price_file,'w') as f:
 	for symbol in price_table:
 		printer.print_entries([price_table[symbol][k] for k in price_table[symbol]],file=f)
 

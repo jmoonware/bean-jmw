@@ -1,6 +1,7 @@
 import requests
 import re
 import numpy as np
+import pandas as pd
 # remember to whitelist fc.yahoo.com for yfinance if using pihole!
 import yfinance as yf
 import sys,os
@@ -10,6 +11,7 @@ from pytz import timezone as tz
 import yaml
 from bs4 import BeautifulSoup as BS
 from beancount.core.data import Price, Amount, Decimal
+import shutil
 
 headers = {
 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0"
@@ -33,6 +35,16 @@ etf_holding_url='/'.join([etf_url,'holding'])
 mf_holding_url='/'.join([mf_url,'holding'])
 etf_sector_url='https://etfdb.com/etf/{}/#charts'
 yf_holding_url='https://finance.yahoo.com/quote/{}/holdings'
+
+def backup_file(file_name):
+# make a backup of price file
+	if os.path.isfile(file_name):
+		v=0
+		while os.path.isfile('.'.join([file_name,str(v)])):
+			v=v+1
+		shutil.copy(file_name,'.'.join([file_name,str(v)]))
+	return
+
 
 def create_price_table(entries):
 	# first thing - create price table
@@ -114,6 +126,8 @@ def get_yahoo(symbol):
 # splits on double quote, comma, double quote with optional whitespace
 el_pat = '" *, *"'
 
+replace_chars=['.','"',',','/','\'','&','%']
+
 def get_holdings_table(symbol,yf_ticker):
 	try:
 		if yf_ticker and 'quoteType' in yf_ticker.info:
@@ -129,6 +143,26 @@ def get_holdings_table(symbol,yf_ticker):
 	holdings_table['name']=[]
 	holdings_table['perc']=[]
 
+	# check for seperate csv file
+	holdings_csv_file = symbol+"_holdings.csv" 
+	if os.path.isfile(holdings_csv_file):
+		csv = pd.read_csv(holdings_csv_file)
+		# need name and perc cols
+		if 'name' in csv.columns and 'perc' in csv.columns:
+			for n,p in zip(csv['name'],csv['perc']):
+				for rc in replace_chars:
+					n=n.replace(rc,'')
+				holdings_table['name'].append(n.upper())
+				holdings_table['perc'].append(float(p))
+		else:
+			sys.stderr.write("Missing name, perc cols in {0}\n".format(holdings_csv_file))
+		# might have symbol column
+		if 'symbol' in csv.columns:
+			for s in csv['symbol']:
+				holdings_table['perc'].append(s)
+	
+		return(holdings_table)
+	
 	if qt == 'ETF':
 		url = etf_holding_url.format(symbol)
 		tab_pat = 'etf_holdings\\.formatted_data'    
@@ -334,30 +368,38 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 			if m:
 				summary_table['DIV']=float(m.group(1))
 	# Sector table
-	if qt!='ETF':
-		if len(sector_table) > 0:
-			for s in sector_table:
-				val=0
-				if sector_table[s]!='NA':
-					val=float(sector_table[s])
-				summary_table['SECT'][s]=val
-	if qt == 'EQUITY':
-		summary_table['SECT'][yf_ticker.info['sector']]=100.
-	if qt == 'MONEYMARKET':
-		summary_table['SECT']['CASH']=100.
-	if qt == 'UNKNOWN':
-		summary_table['SECT']['UNKNOWN']=100.
-	if qt == 'ETF':
-		# have to look somewhere else for ETF index breakdowns
-		r = get_page(etf_sector_url.format(symbol))
-		etf_sector_pat='data-chart-series=(.+?)data-title=.Sector.*?Breakdown'
-		m = re.search(etf_sector_pat, r.text)
-		if m:
-			sec_data='\{"name":(.*?),"data":\[(.+?)\]\}'
-			sd = re.findall(sec_data,m.group(1))
-			for s in sd:
-				summary_table['SECT'][s[0].replace('"','')]=float(s[1])
-		dump_raw(r, symbol+"_ETF")
+	
+	# look for associated file first
+	sector_csv_file = symbol + "_sectors.csv"
+	if os.path.isfile(sector_csv_file):
+		csv = pd.read_csv(sector_csv_file,names=['sector','perc'])
+		for s,p in zip(csv['sector'],csv['perc']): 
+			summary_table['SECT'][s]=float(p)
+	else: # look somewhere else
+		if qt!='ETF':
+			if len(sector_table) > 0:
+				for s in sector_table:
+					val=0
+					if sector_table[s]!='NA':
+						val=float(sector_table[s])
+					summary_table['SECT'][s]=val
+		if qt == 'EQUITY':
+			summary_table['SECT'][yf_ticker.info['sector']]=100.
+		if qt == 'MONEYMARKET':
+			summary_table['SECT']['CASH']=100.
+		if qt == 'UNKNOWN':
+			summary_table['SECT']['UNKNOWN']=100.
+		if qt == 'ETF':
+			# have to look somewhere else for ETF index breakdowns
+			r = get_page(etf_sector_url.format(symbol))
+			etf_sector_pat='data-chart-series=(.+?)data-title=.Sector.*?Breakdown'
+			m = re.search(etf_sector_pat, r.text)
+			if m:
+				sec_data='\{"name":(.*?),"data":\[(.+?)\]\}'
+				sd = re.findall(sec_data,m.group(1))
+				for s in sd:
+					summary_table['SECT'][s[0].replace('"','')]=float(s[1])
+			dump_raw(r, symbol+"_ETF")
 
 	return(summary_table)
 
@@ -495,6 +537,7 @@ def get_all(symbol,clobber=True,prices=None):
 		os.makedirs(cache_dir)
 	yaml_path = os.path.join(cache_dir,symbol+".yaml")
 	if not os.path.isfile(yaml_path) or clobber:
+		backup_file(yaml_path)
 		with open(yaml_path,'w') as f:
 			yaml.dump(info_table, f)	
 		
