@@ -47,7 +47,7 @@ ap.add_argument('-a','--account',required=False,help='Account regex for reportin
 ap.add_argument('-rc','--report_config',required=False,help='Report tsv config file',default=report_config_default)
 ap.add_argument('-c','--currency',required=False,help='Report in this currency (default USD)',default=report_currency)
 ap.add_argument('-pl','--print_ledger',required=False,action='store_true',default=False,help='Print ledger entries for this filter')
-ap.add_argument('-pt','--print_totals',required=False,action='store_true',default=False,help='Print grand totals by currency at end (useful for Expenses)')
+ap.add_argument('-pt','--print_totals',required=False,action='store_true',default=False,help='Print grand totals by currency at end')
 ap.add_argument('-z','--zero_entries',required=False,action='store_true',default=False,help='Print results that sum to 0, otherwise suppress')
 ap.add_argument('-ma','--monthly_ave',required=False,action='store_true',default=False,help='Average by month based on start, end dates')
 ap.add_argument('-dt','--details',required=False,action='store_true',default=False,help='Print subtotals, number of entries, and average months for each top-level entry')
@@ -312,9 +312,13 @@ else:
 		plt.show()
 
 if pargs.print_totals:
+	gt=0
 	for c in tot:
+		gt+=tot[c]
 		print_doc.append("TOTAL {0}\t{1:.2f}".format(c,tot[c]))
-
+	print_doc.append("---------")
+	print_doc.append("{0}\t{1}\tGrandTotal{2}\t{3:.2f}".format(pargs.start_date,pargs.end_date,pargs.type,gt))
+ 
 # details tables
 max_narration=50 # characters long, or pad to this value
 if pargs.details:

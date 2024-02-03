@@ -19,7 +19,7 @@ ap=argparse.ArgumentParser()
 ap.add_argument('-f','--filename',required=True,help='Assets (tsv, Account,Units,Currency columns')
 ap.add_argument('-af','--advisor_fee',required=False,help='Percent Fee for AUM (for an advisor), default 0',default=0)
 ap.add_argument('-tc','--top_holding_cutoff',required=False,help='Perc cutoff for by holding table (default 75)',default=75)
-ap.add_argument('-p','--price_file',required=False,help='Latest price directive file',default='prices.txt')
+ap.add_argument('-pf','--price_file',required=False,help='Latest price directive file',default='prices.txt')
 ap.add_argument('-rc','--report_currency',required=False,help='Report currency (default USD)',default='USD')
 
 pargs=ap.parse_args(sys.argv[1:])
