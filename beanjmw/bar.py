@@ -61,7 +61,7 @@ for acct, symbol,units in zip(holdings['Account'], holdings['Currency'],holdings
 			symbol_info[symbol]['HOLDINGS']['name']=[pargs.report_currency]
 			symbol_info[symbol]['HOLDINGS']['perc']=[100.]
 		else:
-			symbol_info[symbol] = ds.get_all(symbol,prices=price_table)
+			symbol_info[symbol] = ds.get_all(symbol,clobber=False,prices=price_table)
 	amt = units*symbol_info[symbol]['QUOTE']
 	if 'QUOTE_CURRENCY' in symbol_info[symbol]:
 		amt = amt*ds.get_exchange_rate(symbol_info[symbol]['QUOTE_CURRENCY'], pargs.report_currency)

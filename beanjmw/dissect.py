@@ -37,7 +37,6 @@ etf_sector_url='https://etfdb.com/etf/{}/#charts'
 yf_holding_url='https://finance.yahoo.com/quote/{}/holdings'
 
 def backup_file(file_name):
-# make a backup of price file
 	if os.path.isfile(file_name):
 		v=0
 		while os.path.isfile('.'.join([file_name,str(v)])):
@@ -47,7 +46,6 @@ def backup_file(file_name):
 
 
 def create_price_table(entries):
-	# first thing - create price table
 	price_table={}
 	for e in filter(lambda e: type(e)==Price,entries):
 	    if "__implicit_prices__" in e.meta:
@@ -450,7 +448,7 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 
 def update_price_table(symbol,prc,prices):
 	# update price table
-	if prices:
+	if prices!=None:
 		if not symbol in prices:
 			prices[symbol]={}
 		prices[symbol][prc.date]=prc
@@ -466,6 +464,8 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 	# if not supplied, quote for today
 	if not quote_date:
 		quote_date = dt.date(dt.now())
+	elif type(quote_date)==str:
+		quote_date=dt.date(dt.fromisoformat(quote_date))
 	# try the supplied price table
 	if prices and symbol in prices:
 		# get closest date 
@@ -475,7 +475,24 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 		prc = prices[symbol][ta[tidx]]
 		if 'cache_timeout_days' in prc.meta:
 			ctd = int(prc.meta['cache_timeout_days'])
+		if ctd <=0 and len(ta) > 1: # interpolate if possible
+			tat=np.array([dt(x.year,x.month,x.day).timestamp() for x in prices[symbol].keys()])
+			tv = np.array([float(prices[symbol][k].amount[0]) for k in ta])
+			qdt = dt(quote_date.year,quote_date.month,quote_date.day).timestamp()
+			interp_v = np.interp(qdt, tat, tv)
+			prc=prc._replace(amount=prc.amount._replace(number=round(Decimal(interp_v),5)))
+			sys.stderr.write(
+				"{0} using interpolated ledger price {1} from {2}\n".format(
+					symbol,
+					prc.amount,
+					quote_date.isoformat(),
+				)
+			)	
+			# note: don't update price table with interpolated values
+			return(prc) 
+
 		# if ctd < 0, just use whatever is closest no matter the timedelta
+		# otherwise, use the quote within the timeout
 		if ctd <= 0 or np.abs(ta[tidx] - quote_date) < timedelta(ctd):
 			sys.stderr.write(
 				"{0} using ledger price {1} from {2}\n".format(
@@ -485,26 +502,13 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 				)
 			)	
 			return(prc) # last quote price
-	# if we get here, not in price table - check info cache
-	# TODO: don't store quotes in info cache	
-	info_table = check_cache(symbol)
-	if len(info_table) > 0 and 'QUOTE' in info_table and 'QUOTE_DATE' in info_table and 'QUOTE_CURRENCY' in info_table:
-		file_date = dt.date(dt.fromisoformat(info_table['QUOTE_DATE']))
-		if (quote_date - file_date) < timedelta(cache_timeout_days):
-			prc = Price(
-				{},
-				dt.date(dt.fromisoformat(info_table['QUOTE_DATE'])),
-				symbol,
-				amount=Amount(Decimal(info_table['QUOTE']),info_table['QUOTE_CURRENCY']),
-			)
-			update_price_table(symbol,prc,prices)
-			return(prc)
 	
-	# either expired cache or no info
+	# Not in price table, or expired timeout
+	# try Yahoo Finance for history
 	start_date=(quote_date-timedelta(days=cache_timeout_days)).isoformat()
-
-	qt=Decimal('0.00')
-	qd=dt.date(dt.now())
+	end_date=(quote_date+timedelta(days=cache_timeout_days)).isoformat()
+	qv=Decimal('0.00')
+	qd=quote_date
 	qc='UNKNOWN'
 	try:
 		if not tk:
@@ -513,15 +517,15 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 		if 'quoteType' in tk.info:
 			qtype=tk.info['quoteType']
 		if qtype=='MONEYMARKET':
-			qt = Decimal('1.00000')
+			qv = Decimal('1.00000')
 			qc = tk.info['currency']
 		if qtype !='MONEYMARKET' and qtype !='UNKNOWN':
-			df=tk.history(start=start_date)
+			df=tk.history(start=start_date,end=end_date)
 			if len(df) > 0 and 'Close' in df.columns:
 				ta=np.array([dt.date(x) for x in df.index])
 				tidx=np.argmin(np.abs(ta-quote_date))
 				if np.abs(ta[tidx]-quote_date) < timedelta(cache_timeout_days):
-					qt = round(Decimal(df['Close'][tidx]),5)
+					qv = round(Decimal(df['Close'][tidx]),5)
 					qc = tk.info['currency']
 					qd = dt.date(df.index[tidx])
 				# might as well add all the prices we just got
@@ -533,7 +537,7 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 	except Exception as err:
 		sys.stderr.write("Error getting quote {0}: {1}\n".format(symbol,err))
 
-	prc = Price({},date=qd,currency=symbol,amount=Amount(qt,qc))
+	prc = Price({},date=qd,currency=symbol,amount=Amount(qv,qc))
 	if qc!='UNKNOWN':
 		update_price_table(symbol,prc,prices)
 		
@@ -557,9 +561,9 @@ def check_cache(symbol):
 		right_now=tzi.localize(dt.now())
 		last_quote_time=tzi.localize(dt.fromisoformat(info_table['QUOTE_DATE']))
 		if right_now-timedelta(days=cache_timeout_days) < last_quote_time:
-			sys.stderr.write("Returning cache info for {}...\n".format(symbol))
+			sys.stderr.write("Returning yaml cache info for {}...\n".format(symbol))
 		else:
-			sys.stderr.write("Cache out of date for {}...\n".format(symbol))
+			sys.stderr.write("Yaml cache out of date for {}...\n".format(symbol))
 	return(info_table)
 
 # call this function on each symbol in portfolio

@@ -58,6 +58,10 @@ ap.add_argument('-pf','--price_file',required=False,default='prices.txt',help='B
 
 pargs=ap.parse_args(sys.argv[1:])
 
+if not pargs.type in ['Assets','Liabilities','Income','Expenses','Equity']:
+	sys.stderr.write("Invalid type {0}\n".format(pargs.type))
+	sys.exit()
+
 entries,errors,config=load_file(pargs.filename)
 # first thing - create price table
 if os.path.exists(pargs.price_file):
@@ -150,7 +154,11 @@ report_account_names=[e.account for e in filtered_report_accounts]
 toks=[e.account.split(':') for e in filtered_report_accounts]
 
 # needed for printing below
-max_account_len = max([len(e.account) for e in filtered_report_accounts])
+if len(filtered_report_accounts)==0:
+	sys.stderr.write("Nothing to report for {0}, {1}\n".format(pargs.type,pargs.account))
+	sys.exit()
+else:
+	max_account_len = max([len(e.account) for e in filtered_report_accounts])
 
 report_groups={}
 ci=0
