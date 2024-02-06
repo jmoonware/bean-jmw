@@ -1,6 +1,6 @@
 import beancount.reports.report as rp
 import beancount as bc
-from beancount.core.data import Posting,Open,Transaction,Balance
+from beancount.core.data import Posting,Open,Transaction,Balance,Commodity,Price,Event
 from beancount.parser import printer
 from beancount.ingest.similar import find_similar_entries
 from beancount.core.data import D, Decimal
@@ -250,7 +250,11 @@ def update_unassigned(e, unassigned_payees):
 	pre_assigned_category="Expenses:UNASSIGNED"
 	unassigned_payee="EMPTY"
 	if 'category' in e.meta:
-		pre_assigned_category=':'.join(["Expenses",e.meta['category']])
+		# if it is a valid top-level account, use as-is
+		if e.meta['category'].split(':')[0] in ['Assets','Expenses','Liabilities','Income','Equity']:
+			pre_assigned_category=e.meta['category']
+		else: # else assume it is an Expense
+			pre_assigned_category=':'.join(["Expenses",e.meta['category']])
 		unassigned_payee=e.meta['category']
 	# first is always payee
 	tok=e.narration.split('/')[0].strip() 
@@ -292,21 +296,17 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	opened_accounts=[]
 	if ledger_entries:
 		opened_accounts=[e.account for e in ledger_entries if type(e)==Open]
-	for ex_file, entries in extracted_entries_list:
+	for (ex_file,entries),(fn,account) in zip(extracted_entries_list,filename_accounts):
 		# links payees/narration to account 
 		assignLUT={}
 		assign_groups={}
 		unassigned_payees={}
 		# default account file name for unassigned
-		account='unknown'
-		account_file=os.path.join(dir_path,account+".yaml")
-		if ex_file in filename_accounts:
-			account=filename_accounts[ex_file]
-			account_file=os.path.join(dir_path,account.replace(':','_')+".yaml")
-			if os.path.isfile(account_file):
-				with open(account_file,'r') as f:
-					assignLUT=yaml.safe_load(f)
-					assign_groups=group_regex(assignLUT)
+		account_file=os.path.join(dir_path,account.replace(':','_')+".yaml")
+		if os.path.isfile(account_file):
+			with open(account_file,'r') as f:
+				assignLUT=yaml.safe_load(f)
+				assign_groups=group_regex(assignLUT)
 		new_entries.append((ex_file,[]))
 		for en,e in enumerate(entries):
 			# check for zero value entries - lots of these in CC's
@@ -418,6 +418,10 @@ def deduplicate(extracted_entries_list,ledger_entries):
 					ident="Open: " + ne.account
 				elif type(ne)==Balance:
 					ident="Balance: " + ne.account
+				elif type(ne)==Commodity:
+					ident="Commodity: " + ne.currency
+				elif type(ne)==Price:
+					ident="Price: " + ne.currency
 				else:
 					ident=str(type(ne))
 				if not remove_duplicates:
@@ -487,10 +491,20 @@ def compare_entries(entries_a,entries_b):
 					# date, amount, and accounts match
 					if vn and va and vn.currency==va.currency and abs(vn.number-va.number) < compare_delta and ne_ts==da: 
 						dl.append(ne)
-		elif type(ea)==Balance or type(ea)==Open:
+		elif type(ea)==Balance or type(ea)==Open: 
 			for ne in near_entries:
 				if type(ne)==type(ea):
 					if ea.account==ne.account and ea.date==ne.date:
+						dl.append(ne)
+		elif type(ea)==Commodity or type(ea)==Price:
+			for ne in near_entries:
+				if type(ne)==type(ea):
+					if ea.currency==ne.currency and ea.date==ne.date:
+						dl.append(ne)
+		elif type(ea)==Event:
+			for ne in near_entries:
+				if type(ne)==type(ea):
+					if ea.type==ne.type and ea.date==ne.date and ea.description==ne.description:
 						dl.append(ne)
 
 	return(duplicate_list)

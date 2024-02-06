@@ -13,9 +13,12 @@ from datetime import datetime as dt
 default_open_date='2000-01-01'
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,file_name):
+	def __init__(self,account_name,file_name,reassign=False):
 		self.file_name=file_name
 		self.account_name=account_name
+		# if true, ignore account assignment
+		# generate assignment hints from current assignments
+		self.reassign = reassign
 		super().__init__()
 
 	def identify(self, file):
@@ -43,9 +46,25 @@ class Importer(ImporterProtocol):
 		try:
 			ledger = load_file(file.name)
 			if ledger and len(ledger) > 0:
-				entries = ledger[0] # That's it!
-		except:
-			sys.stderr.write("Unable to open or parse {0}".format(file.name))
+				loaded_entries = ledger[0] # That's it!
+			# now, adjust transactions if we are reassigning
+			for e in loaded_entries:
+				if type(e) == Transaction and e.postings and self.reassign:
+					accts=[p.account for p in e.postings]
+					if self.account_name in accts:
+						pidx = accts.index(self.account_name)
+						accts.remove(self.account_name)
+						# usually just 1, but could be more than one which
+						# would need a hand-edit of the yaml file
+						if len(accts) == 1:
+							e.meta["category"]=accts[0].replace('Expenses:','')
+							entries.append(e._replace(postings=[e.postings[pidx]]))
+						else:
+							entries.append(e)
+				else:
+					entries.append(e)
+		except Exception as ex:
+			sys.stderr.write("Unable to open or parse {0}: {1}\n".format(file.name,ex))
 			return(entries)
 		return(entries)
 

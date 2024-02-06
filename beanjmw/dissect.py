@@ -19,7 +19,7 @@ headers = {
 
 
 cache_dir='yaml'
-cache_timeout_days=3
+cache_timeout_days=5
 
 symbol='VONG' # ETF
 symbol='SPMD' # ETF
@@ -507,6 +507,8 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 	# try Yahoo Finance for history
 	start_date=(quote_date-timedelta(days=cache_timeout_days)).isoformat()
 	end_date=(quote_date+timedelta(days=cache_timeout_days)).isoformat()
+	if dt.fromisoformat(end_date) > dt.today():
+		end_date=dt.date(dt.now()).isoformat()
 	qv=Decimal('0.00')
 	qd=quote_date
 	qc='UNKNOWN'

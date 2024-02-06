@@ -200,14 +200,15 @@ for k in report_groups:
 			# get the Inventory...
 			# since this is a sum there should be only 1 position
 			positions=query_results[a][0].get_positions()
-			if len(positions) > 1:
-				sys.stderr.write("Warning: multiple positions in {0}\n".format(query_results[a]))
 			if len(positions) == 0:
 				sys.stderr.write("Warning: no positions in {0} for {1}\n".format(query_results[a],a))
-				first_position=(Amount(Decimal('0'),report_currency),None)
+				amount=Amount(Decimal('0'),report_currency)
 			else:
-				first_position=positions[0]
-			amount = first_position[0] 
+				tot=sum([pi[0][0] for pi in positions])
+				pcur = np.unique([a[0][1] for a in positions])
+				if len(pcur) > 1:
+					sys.stderr.write("Warning: Multiple currencies in position {0} {1}\n".format(pcur,a))
+				amount = Amount(tot,pcur[0])
 			currency=amount[1]
 			if not currency in v:
 				v[currency]=Decimal('0.00000')
