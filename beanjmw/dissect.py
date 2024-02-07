@@ -12,6 +12,7 @@ import yaml
 from bs4 import BeautifulSoup as BS
 from beancount.core.data import Price, Amount, Decimal
 import shutil
+from beancount.loader import printer
 
 headers = {
 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0"
@@ -47,6 +48,7 @@ def backup_file(file_name):
 
 def create_price_table(entries):
 	price_table={}
+	# since options are usually not at the market price, ignore buy prices
 	for e in filter(lambda e: type(e)==Price,entries):
 	    if "__implicit_prices__" in e.meta:
 	        continue
@@ -59,6 +61,16 @@ def create_price_table(entries):
 	for c in price_table:
 	    price_table[c]=dict(sorted(price_table[c].items()))
 	return(price_table)
+
+def size_price_table(price_table):
+	return(sum([len(price_table[s]) for s in price_table]))
+
+def save_price_table(price_file,price_table):
+	backup_file(price_file)
+	with open(price_file,'w') as f:                                        
+		for symbol in price_table:
+			printer.print_entries([price_table[symbol][k] for k in price_table[symbol]],file=f)  
+	return
 	
 # exchange rate URL
 exchange_rate_url='https://api.exchangerate-api.com/v4/latest/'
@@ -575,17 +587,22 @@ def get_all(symbol,clobber=True,prices=None):
 	if not os.path.isdir(cache_dir):
 		os.makedirs(cache_dir)
 
+	cache_info = False
 	info_table = check_cache(symbol)
 	if len(info_table) > 0:
-		return(info_table)
+		cache_info=True
 
-	# if we got here, have to reload information
-	sys.stderr.write("Gathering info for {}...\n".format(symbol))
+	# always try to get a fresh quote
 	tk = yf.ticker.Ticker(symbol)
 	latest_quote=quote(symbol,tk,prices=prices)
 	info_table['QUOTE_DATE']=latest_quote.date.isoformat()
 	info_table['QUOTE']=float(latest_quote.amount[0])
 	info_table['QUOTE_CURRENCY']=latest_quote.amount[1]
+	if cache_info:
+		return(info_table)
+
+	# if we got here, have to reload information
+	sys.stderr.write("Gathering info for {}...\n".format(symbol))
 	try:
 		info_table = get_info_table(symbol, tk, info_table)
 		info_table['HOLDINGS']=get_holdings_table(symbol, tk)

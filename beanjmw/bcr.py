@@ -70,6 +70,9 @@ if os.path.exists(pargs.price_file):
 else:
 	price_table=ds.create_price_table(entries)
 
+# if size changes, save updated version below
+pt_size = ds.size_price_table(price_table)
+
 acct_match=pargs.type
 if len(pargs.account) > 0:
 	acct_match==pargs.account
@@ -372,11 +375,7 @@ if pargs.html:
 	print_doc.append("</html>")
 
 # save the price table
-
-# clobber existing file
-ds.backup_file(pargs.price_file)
-with open(pargs.price_file,'w') as f:
-	for symbol in price_table:
-		printer.print_entries([price_table[symbol][k] for k in price_table[symbol]],file=f)
+if pt_size!=ds.size_price_table(price_table):
+	ds.save_price_table(pargs.price_file,price_table)
 
 print('\n'.join(print_doc))

@@ -24,6 +24,7 @@ ap.add_argument('-rc','--report_currency',required=False,help='Report currency (
 
 pargs=ap.parse_args(sys.argv[1:])
 
+entries=[]
 try:
 	entries, errors, config = load_file(pargs.price_file)
 except:
