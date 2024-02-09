@@ -46,12 +46,13 @@ def backup_file(file_name):
 	return
 
 
-def create_price_table(entries):
-	price_table={}
+def create_price_table(entries,price_table=None):
+	if price_table==None:
+		price_table={}
 	# since options are usually not at the market price, ignore buy prices
 	for e in filter(lambda e: type(e)==Price,entries):
-	    if "__implicit_prices__" in e.meta:
-	        continue
+#	    if "__implicit_prices__" in e.meta:
+#	        continue
 	    if not e.currency in price_table:
 	        price_table[e.currency]={}
 	    # don't overwrite entries without cache_timeout_days
@@ -534,7 +535,7 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 			qv = Decimal('1.00000')
 			qc = tk.info['currency']
 		if qtype !='MONEYMARKET' and qtype !='UNKNOWN':
-			df=tk.history(start=start_date,end=end_date)
+			df=tk.history(start=start_date,end=end_date,auto_adjust=False)
 			if len(df) > 0 and 'Close' in df.columns:
 				ta=np.array([dt.date(x) for x in df.index])
 				tidx=np.argmin(np.abs(ta-quote_date))

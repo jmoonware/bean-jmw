@@ -31,7 +31,7 @@ clargs = ap.parse_args(sys.argv[1:])
 
 entries, errors, config = load_file(clargs.ledger_file)
 
-qs = 'select account, date, change, balance where account~"' + clargs.account + '"'
+qs = 'select account, date, change, balance where account~"' + clargs.account + '" order by date'
 
 qr=query.run_query(entries,config,qs,()) 
 
@@ -49,7 +49,7 @@ if len(ylabels) > 1:
 	sys.exit()
 
 ydata = np.array([r.change[0][0] for r in qr[1] if r.change])
-quotes=[]
+quotes=np.full(len(ydata),1)
 price_table={}
 
 if ylabels[0]!=clargs.report_currency:
@@ -57,16 +57,17 @@ if ylabels[0]!=clargs.report_currency:
 	if os.path.isfile(clargs.price_file):
 		price_entries, errors, config = load_file(clargs.price_file)
 	price_table = ds.create_price_table(price_entries)
+	price_table = ds.create_price_table(entries,price_table=price_table)
 	pt_size = ds.size_price_table(price_table)
 
 	tk=yf.ticker.Ticker(ylabels[0])
 	quotes=[ds.quote(ylabels[0],tk=tk,prices=price_table,quote_date=r.date) for r in qr[1] if r.change]
 	# convert to quote currency
 	# NOTE: Quotes are in USD, other national currencies not supported
-	ydata = np.array([q.amount[0] for q in quotes])*ydata 
+	quotes = np.array([q.amount[0] for q in quotes]) 
 	
 if clargs.balance:
-	ydata=np.cumsum(ydata)
+	ydata=np.cumsum(ydata)*quotes
 	if clargs.cost_basis:
 		inv = [r.balance for r in qr[1] if r.change] 
 		cb=[]
@@ -104,7 +105,7 @@ if clargs.balance or clargs.points:
 	if clargs.cost_basis and clargs.balance:
 		ax2 = ax.twinx()
 		if len(quotes)==len(xdata):
-			ax2.plot(xdata,[q.amount[0] for q in quotes],label="{0}, Quote".format(clargs.account),color='orange')
+			ax2.plot(xdata,quotes,label="{0}, Quote".format(clargs.account),color='orange')
 		ax2.plot(xdata,cb,label="{0}, CB".format(clargs.account),color='green')
 		ax2.legend(loc='upper right')
 		ax2.set_ylabel('USD')
