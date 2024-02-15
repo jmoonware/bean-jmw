@@ -70,6 +70,14 @@ if os.path.exists(pargs.price_file):
 else:
 	price_table=ds.create_price_table(entries)
 
+# create a table of the commodity directives by currency
+commodity_table={}
+ds.create_commodity_table(entries,commodity_table)
+excluded_commodities = [commodity_table[c].currency for c in commodity_table if commodity_table[c].meta and "export" in commodity_table[c].meta and commodity_table[c].meta['export'].upper()=="IGNORE"]
+
+if len(excluded_commodities) > 0:
+	sys.stderr.write("Excluding commodities {0}\n".format(excluded_commodities)) 
+
 # if size changes, save updated version below
 pt_size = ds.size_price_table(price_table)
 
@@ -97,9 +105,13 @@ if pargs.monthly_ave:
 else:
 	months_ave=1
 
-# make a dict of open accounts in ledger
+# make a set of open accounts in ledger
 account_set=set()
-[account_set.add(e.account) for e in entries if type(e)==Open]
+for e in filter(lambda e: type(e)==Open, entries):
+	if e.currencies and sum([x in e.currencies for x in excluded_commodities]):
+		continue
+	account_set.add(e.account)
+
 account_keys=sorted(account_set)
 
 def save_config(path,report_elements):
@@ -153,6 +165,7 @@ else:
 level=int(pargs.level) # level'th token in a:b:... format split on :
 # take out excluded accounts 
 filtered_report_accounts=[e for e in report_accounts if re.match(pargs.type,e.account) and str(e.include).upper()=='Y']
+# take out ignored commodities too 
 report_account_names=[e.account for e in filtered_report_accounts]
 toks=[e.account.split(':') for e in filtered_report_accounts]
 
@@ -165,12 +178,13 @@ else:
 
 report_groups={}
 ci=0
+skip_levels=['US','UK','Federal','State']
 while ci < len(toks):
 	clevel=level
 	if clevel >= len(toks[ci]):
 		sys.stderr.write("Warning: Level {0} exceeds depth of {1}\n".format(clevel,':'.join(toks[ci])))
 		clevel=len(toks[ci])-1
-	if toks[ci][clevel] == 'US' or toks[ci][clevel] == 'UK': # don't group by country
+	if toks[ci][clevel] in skip_levels: # don't group by these
 		tlevel=clevel+1
 	else:
 		tlevel=clevel
@@ -188,6 +202,9 @@ while ci < len(toks):
 	ci+=gi
 
 report_table={}
+
+# use values as of this date to convert to report currency
+quote_date=dt.date(dt.fromisoformat(pargs.end_date))
 
 for k in report_groups:
 	v={} # by currency
@@ -219,7 +236,7 @@ for k in report_groups:
 				v_rc[currency]=Decimal('0.00000')
 			if amount[0]:
 				res = abs(amount[0]/round(Decimal(ma),5))
-				res_rc = convert_currency(currency, res, dt.date(dt.fromisoformat(pargs.end_date)))
+				res_rc = convert_currency(currency, res, quote_date)
 			else:
 				res=Decimal('0.00000')
 				res_rc=Decimal('0.00000')

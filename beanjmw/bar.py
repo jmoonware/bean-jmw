@@ -1,5 +1,6 @@
 # bar.py: Beancount Asset Report
-# Input is a tsv file with at least Account, Units, Currency columns
+# Input is a tsv file with at least Account, Units, Currency, report_currency
+# columns (where report_currency is usually 'USD')
 # Generate this file from the Beancount ledger using bcr (Beancount Report)
 # with -t Assets and filtered with a bcr.tsv file
 #
@@ -14,19 +15,23 @@ import matplotlib.pyplot as plt
 import argparse 
 import sys
 from beancount.loader import load_file
+from datetime import datetime as dt
+from beancount.core.data import Price, Amount, Decimal
 
 ap=argparse.ArgumentParser()
-ap.add_argument('-f','--filename',required=True,help='Assets (tsv, Account,Units,Currency columns')
+ap.add_argument('-f','--filename',required=True,help='Assets (tsv, Account,Units,Currency,Report_Currency(default:USD) columns')
 ap.add_argument('-af','--advisor_fee',required=False,help='Percent Fee for AUM (for an advisor), default 0',default=0)
 ap.add_argument('-tc','--top_holding_cutoff',required=False,help='Perc cutoff for by holding table (default 75)',default=75)
-ap.add_argument('-pf','--price_file',required=False,help='Latest price directive file',default='prices.txt')
+ap.add_argument('-pf','--price_file',required=False,help='Latest price directive file',default='')
 ap.add_argument('-rc','--report_currency',required=False,help='Report currency (default USD)',default='USD')
+ap.add_argument('-qd','--quote_date',required=False,help='Date to use for quotes (default is today)',default=dt.date(dt.now()).isoformat())
 
 pargs=ap.parse_args(sys.argv[1:])
 
 entries=[]
 try:
-	entries, errors, config = load_file(pargs.price_file)
+	if len(pargs.price_file) > 0:
+		entries, errors, config = load_file(pargs.price_file)
 except:
 	sys.stderr.write('Could not load file {0}\n'.format(pargs.price_file))
 	entries = []
@@ -40,12 +45,23 @@ holdings=pd.read_csv(pargs.filename,sep='\t')
 
 symbol_info={}
 
-# update if cache is this out of date
+# update if cache is this many days out of date
 ds.cache_timeout_days=7 
 
 by_account={}
 
-for acct, symbol,units in zip(holdings['Account'], holdings['Currency'],holdings['Units']):
+date_qd = dt.date(dt.fromisoformat(pargs.quote_date))
+
+for acct, symbol, units, holding_amt in zip(holdings['Account'], holdings['Currency'],holdings['Units'],holdings[pargs.report_currency]):
+	# update price table with implied prices
+	# If no price table is supplied, assume the provided values
+	# imply a quote price for whatever quote_date is
+	# If a price table is supplied, get quotes from there (or failing that,
+	# the ds.quote function will try to get an online quote for quote_date)
+	if holding_amt > 0 and units > 0 and not len(pargs.price_file)>0:
+		if not symbol in price_table:
+			price_table[symbol]={}
+		price_table[symbol][date_qd]=Price({},date_qd,symbol,Amount(round(Decimal(holding_amt/units),5),pargs.report_currency))
 	if not symbol in symbol_info:
 		if symbol == pargs.report_currency: # just cash
 			symbol_info[symbol]={}
@@ -62,7 +78,7 @@ for acct, symbol,units in zip(holdings['Account'], holdings['Currency'],holdings
 			symbol_info[symbol]['HOLDINGS']['name']=[pargs.report_currency]
 			symbol_info[symbol]['HOLDINGS']['perc']=[100.]
 		else:
-			symbol_info[symbol] = ds.get_all(symbol,clobber=False,prices=price_table)
+			symbol_info[symbol] = ds.get_all(symbol,clobber=False,prices=price_table,quote_date=pargs.quote_date)
 	amt = units*symbol_info[symbol]['QUOTE']
 	if 'QUOTE_CURRENCY' in symbol_info[symbol]:
 		amt = amt*ds.get_exchange_rate(symbol_info[symbol]['QUOTE_CURRENCY'], pargs.report_currency)
@@ -167,7 +183,7 @@ w_ER=0
 w_SL=0
 w_DL=0
 
-print('\n'+'\t'.join(['Symbol','Total$','Total%','Div','ER','SL','DL','CAT','TYPE']))
+print('\n'+'\t'.join(['Symbol','Total$','Total%','Div','ER','SL','DL','CAT']))
 
 for s in symbol_highlow:
 	cols=[]

@@ -13,7 +13,7 @@ from datetime import datetime as dt
 default_open_date='2000-01-01'
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,file_name,reassign=False):
+	def __init__(self,account_name,file_name='',reassign=False):
 		self.file_name=file_name
 		self.account_name=account_name
 		# if true, ignore account assignment
@@ -28,10 +28,12 @@ class Importer(ImporterProtocol):
 			Returns:
 				A boolean, true if this importer can handle this file.
 		"""
-		if os.path.split(file.name)[1]==self.file_name:
-			return True
+		# check if this is a beancount ledger using load_file
+		entries, errs, config = load_file(file.name)
+		if len(errs) > 0:
+			return False
 		else:
-			 return False
+			 return True
 		
 	def extract(self, file, existing_entries=None):
 		"""Extract transactions from a file.
@@ -91,7 +93,6 @@ class Importer(ImporterProtocol):
           The tidied up, new filename to store it as.
 		"""
 		init_name=os.path.split(file.name)[1]
-#		ds=dt.date(dt.fromtimestamp(os.path.getmtime(file.name))).isoformat()
 		return(init_name)
 
 	def file_date(self, file):

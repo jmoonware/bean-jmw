@@ -18,6 +18,7 @@ numeric_regex="[0-9]+"
 remove_duplicates=True
 remove_zero_value_transactions=True
 missing_payee_tag="UNASSIGNED"
+quiet=True
 
 def is_check(e):
 	""" Determines if it is a check from narration and returns check number
@@ -430,7 +431,8 @@ def deduplicate(extracted_entries_list,ledger_entries):
 					deduped_entries_list[-1][1].append(ne)
 				else:
 					msg="Removed dup {0} {1}\n".format(ne.date,ident)
-					sys.stderr.write(msg)
+					if not quiet:
+						sys.stderr.write(msg)
 #					ne=Note({'orig':ne.narration},ne.date,ne.postings[0].account,'Dup is {0} {1} {2}'.format(str(d[0].date),d[0].postings[0].account,d[0].narration))
 #					deduped_entries_list[-1][1].append(ne)
 			else:

@@ -11,6 +11,8 @@ import yfinance as yf
 import os
 import argparse
 import sys
+from datetime import datetime as dt
+from datetime import timedelta
 
 # linear fit func
 def fitfun(x,m,b,y0):
@@ -18,7 +20,7 @@ def fitfun(x,m,b,y0):
 
 ap = argparse.ArgumentParser()
 ap.add_argument('-a','--account',required=False,help='Account regex',default='Groceries')
-ap.add_argument('-f','--ledger_file',required=False,help='Ledger file',default='master.txt')
+ap.add_argument('-f','--ledger_file',required=False,help='Ledger file',default='')
 ap.add_argument('-pf','--price_file',required=False,help='Prices file',default='prices.txt')
 ap.add_argument('-d','--dump',required=False,help='Dump search results (for debugging)',default=False,action='store_true')
 ap.add_argument('-e','--error_bars',required=False,help='add 1 std error bars',default=False,action='store_true')
@@ -26,12 +28,18 @@ ap.add_argument('-b','--balance',required=False,help='Plot balance by point',def
 ap.add_argument('-cb','--cost_basis',required=False,help='Plot cost basis by point (along with balance)',default=False,action='store_true')
 ap.add_argument('-p','--points',required=False,help='Plot change by point',default=False,action='store_true')
 ap.add_argument('-rc','--report_currency',required=False,help='Name of commidity, or USD (default)',default='USD')
+ap.add_argument('-og','--output_graph',required=False,help='Name of plot image file to save - otherwise plot to screen',default='')
+ap.add_argument('-od','--output_data',required=False,help='Name of tsv file of plot data to save',default='')
+ap.add_argument('-sd','--start_date',required=False,help='Name of tsv file of plot data to save',default=dt.date(dt.now()-timedelta(days=365)).isoformat())
+ap.add_argument('-ed','--end_date',required=False,help='Name of tsv file of plot data to save',default=dt.date(dt.now()).isoformat())
 
 clargs = ap.parse_args(sys.argv[1:])
 
 entries, errors, config = load_file(clargs.ledger_file)
 
-qs = 'select account, date, change, balance where account~"' + clargs.account + '" order by date'
+data_table={}
+
+qs = 'select account, date, change, balance from open on {0} close on {1} where account~"{2}" order by date'.format(clargs.start_date,clargs.end_date,clargs.account)
 
 qr=query.run_query(entries,config,qs,()) 
 
@@ -101,13 +109,17 @@ fig, ax = plt.subplots()
 
 # plot all points
 if clargs.balance or clargs.points:
-	ax.plot(xdata,ydata,label=clargs.account)
+	data_table['date']=xdata
+	data_table[ylabels[0]]=ydata
+	ax.plot(xdata,ydata,label=clargs.account,marker='.')
 	if clargs.cost_basis and clargs.balance:
 		ax2 = ax.twinx()
 		if len(quotes)==len(xdata):
-			ax2.plot(xdata,quotes,label="{0}, Quote".format(clargs.account),color='orange')
-		ax2.plot(xdata,cb,label="{0}, CB".format(clargs.account),color='green')
-		ax2.legend(loc='upper right')
+			data_table['quotes']=quotes
+			ax2.plot(xdata,quotes,label="{0}, Quote".format(clargs.account),color='orange',marker='.')
+		ax2.plot(xdata,cb,label="{0}, CB".format(clargs.account),color='green',marker='.')
+		data_table['cost_basis']=cb
+		ax2.legend(loc='lower right')
 		ax2.set_ylabel('USD')
 
 else: # plot by monthly average
@@ -117,18 +129,36 @@ else: # plot by monthly average
 	else:
 		yearly_data_std=[0 for yr in all_years]
 	
+	data_table['date']=all_years
+	data_table['yearly_data']=yearly_data
+	data_table['yearly_data_std']=yearly_data_std
 	ax.errorbar(all_years,yearly_data,yerr=yearly_data_std, capsize=5,marker='o',label=clargs.account)
-	
-	res = curve_fit(fitfun,all_years,yearly_data, p0=[0.03,2000,1000])
-	ave_val=np.mean(fitfun(all_years,res[0][0],res[0][1],res[0][2]))
-	perc_change = res[0][0]/ave_val
-	ax.plot(all_years,fitfun(all_years,res[0][0],res[0][1],res[0][2]),label='linear {0:.2f}% pa'.format(perc_change*100))
+
+	if len(data_table['date']) >= 3:	
+		res = curve_fit(fitfun,all_years,yearly_data, p0=[0.03,2000,1000])
+		data_table['fit']=fitfun(all_years,res[0][0],res[0][1],res[0][2])
+		ave_val=np.mean(data_table['fit'])
+		perc_change = 100*res[0][0]/ave_val
+		data_table['fit']=fitfun(all_years,res[0][0],res[0][1],res[0][2])
+		ax.plot(all_years,data_table['fit'],label='linear {0:.2f}% pa'.format(perc_change))
 
 plt.title(clargs.account)
 plt.xlabel("Date")
 ax.set_ylabel(clargs.report_currency)
 ax.legend(loc='upper left')
-plt.show()
+if len(clargs.output_graph) > 0:
+	plt.savefig(clargs.output_graph)
+else:
+	plt.show()
+
+if len(clargs.output_data) > 0:
+	with open(clargs.output_data,'w') as f:
+		f.write('# ' + ' '.join(sys.argv)+'\n')
+		f.write('# ' + ', '.join(accounts)+'\n')
+		f.write('\t'.join(data_table.keys())+'\n')
+		for i,d in enumerate(data_table['date']):
+			line='\t'.join([str(d)]+["{0:.2f}".format(data_table[k][i]) for k in data_table if k!='date'])+'\n'
+			f.write(line)
 
 # if price table has changed then save a new version
 if ylabels[0]!=clargs.report_currency and pt_size!=ds.size_price_table(price_table):

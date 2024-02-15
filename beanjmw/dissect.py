@@ -10,7 +10,7 @@ from datetime import timedelta
 from pytz import timezone as tz
 import yaml
 from bs4 import BeautifulSoup as BS
-from beancount.core.data import Price, Amount, Decimal
+from beancount.core.data import Price, Amount, Decimal, Commodity
 import shutil
 from beancount.loader import printer
 
@@ -46,13 +46,18 @@ def backup_file(file_name):
 	return
 
 
+def create_commodity_table(entries,commodity_table=None):
+	if commodity_table==None:
+		commodity_table={}
+	for e in filter(lambda e: type(e)==Commodity,entries):
+	    if not e.currency in commodity_table:
+	        commodity_table[e.currency]=e
+	return(commodity_table)
+
 def create_price_table(entries,price_table=None):
 	if price_table==None:
 		price_table={}
-	# since options are usually not at the market price, ignore buy prices
 	for e in filter(lambda e: type(e)==Price,entries):
-#	    if "__implicit_prices__" in e.meta:
-#	        continue
 	    if not e.currency in price_table:
 	        price_table[e.currency]={}
 	    # don't overwrite entries without cache_timeout_days
@@ -467,7 +472,7 @@ def update_price_table(symbol,prc,prices):
 		prices[symbol][prc.date]=prc
 	return
 
-def quote(symbol,tk=None,prices=None,quote_date=None):
+def quote(symbol,tk=None,prices=None,quote_date=None,quiet=True):
 	''' Arguments: string ticker symbol, optionally a yfinance ticker
 		for this symbol (might already have one, so saves time)
 		optional prices dict based on price directives in loaded ledger
@@ -494,26 +499,28 @@ def quote(symbol,tk=None,prices=None,quote_date=None):
 			qdt = dt(quote_date.year,quote_date.month,quote_date.day).timestamp()
 			interp_v = np.interp(qdt, tat, tv)
 			prc=prc._replace(amount=prc.amount._replace(number=round(Decimal(interp_v),5)))
-			sys.stderr.write(
-				"{0} using interpolated ledger price {1} from {2}\n".format(
+			if not quiet:
+				sys.stderr.write(
+					"{0} using interpolated ledger price {1} from {2}\n".format(
 					symbol,
 					prc.amount,
 					quote_date.isoformat(),
-				)
-			)	
+					)
+				)	
 			# note: don't update price table with interpolated values
 			return(prc) 
 
 		# if ctd < 0, just use whatever is closest no matter the timedelta
 		# otherwise, use the quote within the timeout
 		if ctd <= 0 or np.abs(ta[tidx] - quote_date) < timedelta(ctd):
-			sys.stderr.write(
-				"{0} using ledger price {1} from {2}\n".format(
+			if not quiet:
+				sys.stderr.write(
+					"{0} using ledger price {1} from {2}\n".format(
 					symbol,
 					prc.amount,
 					prc.date.isoformat(),
-				)
-			)	
+					)
+				)	
 			return(prc) # last quote price
 	
 	# Not in price table, or expired timeout
@@ -582,7 +589,7 @@ def check_cache(symbol):
 	return(info_table)
 
 # call this function on each symbol in portfolio
-def get_all(symbol,clobber=True,prices=None):
+def get_all(symbol,clobber=True,prices=None,quote_date=None):
 
 	# always make sure cache dir exists
 	if not os.path.isdir(cache_dir):
@@ -593,9 +600,9 @@ def get_all(symbol,clobber=True,prices=None):
 	if len(info_table) > 0:
 		cache_info=True
 
-	# always try to get a fresh quote
+	# always try to get a fresh quote - don't use yaml cache value
 	tk = yf.ticker.Ticker(symbol)
-	latest_quote=quote(symbol,tk,prices=prices)
+	latest_quote=quote(symbol,tk,prices=prices,quote_date=quote_date)
 	info_table['QUOTE_DATE']=latest_quote.date.isoformat()
 	info_table['QUOTE']=float(latest_quote.amount[0])
 	info_table['QUOTE_CURRENCY']=latest_quote.amount[1]
