@@ -55,6 +55,7 @@ ap.add_argument('-cl','--clobber',required=False,action='store_true',default=Fal
 ap.add_argument('-html','--html',required=False,action='store_true',default=False,help='Output in static html')
 ap.add_argument('-np','--no_plot',required=False,action='store_true',default=False,help='No interactive plot - just print and exit')
 ap.add_argument('-pf','--price_file',required=False,default='prices.txt',help='Beancount price directive file to use')
+ap.add_argument('-cf','--css_file',required=False,default='bcr.css',help='Beancount report css file - default is "bcr.css", will be copied over if missing')
 
 pargs=ap.parse_args(sys.argv[1:])
 
@@ -248,33 +249,24 @@ for k in report_groups:
 print_doc=[]
 # Sigh. It is 2023, still writing print statements of shitty HTML...
 if pargs.html:
+	# make sure we have css file
+	if not os.path.isfile(pargs.css_file):
+		import beanjmw
+		mod_path = beanjmw.__path__[0]
+		copy_file = os.path.join(mod_path,pargs.css_file)
+		if os.path.isfile(copy_file):
+			os.system("cp {0} .".format(copy_file))
+		else:
+			system.stderr.write("Can't find {0} to copy\n".format(copy_file))
+
 	print_doc.append("<!DOCTYPE html>")
 	print_doc.append("<html>")
-	print_doc.append('<head><style type="text/css">')
-	print_doc.append("table {")
-	print_doc.append("font-family: arial, sans-serif;")
-	print_doc.append("border-collapse: collapse;")
-	print_doc.append("}")
-	print_doc.append("th, td {")
-	print_doc.append("  border: 1px #dddddd;")
-	print_doc.append("  text-align: left;")
-	print_doc.append("  padding: 8px;")
-	print_doc.append("}")
-	print_doc.append("tr.subheader {")
-	print_doc.append("  border: 1px solid blue;")
-	print_doc.append("  padding: 4px;")
-	print_doc.append("}")
-	print_doc.append("th.subheader {")
-	print_doc.append("  padding: 4px;")
-	print_doc.append("  text-align: left;")
-	print_doc.append("}")
-	print_doc.append("@media print {")
-	print_doc.append(".pagebreak { page-break-before: always; }")
-	print_doc.append("}")
-	print_doc.append("</style></head>")
+	print_doc.append('<head>')
+	print_doc.append('<link rel="stylesheet" href="{0}" >'.format(pargs.css_file))
+	print_doc.append("</head>")
 	print_doc.append("<body>")
-	dfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2:.2f}</td><td>{3}</td><td><b>{4:1.2f}</b></td></tr>'
-	dlfmt='<tr><td>{0}</td><td>{1}</td><td></td><td></td><td>{2}</td></tr>'
+	subcatfmt='<tr class="subcat"><td><label for="t{0}"/></td><td>{1}</td><td>{2:.2f}</td><td>{3:.2f}</td><td>{4}</td><td><b>{5:1.2f}</b></td></tr>'
+	rowhidefmt='<tr class="rowhide"><td>{0}</td><td>{1}</td><td></td><td></td><td>{2}</td></tr>'
 	tfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2}</td><td>{3:.2f}</td></tr>'
 	print_doc.append("<h1>{0} Report {1}</h1>".format(pargs.type,dt.date(dt.now()).isoformat()))
 	print_doc.append("<h2>Period from {0} to {1}</h2>".format(pargs.start_date,pargs.end_date))
@@ -285,9 +277,9 @@ if pargs.html:
 	print_doc.append("<td>")
 	print_doc.append("<table>")
 	print_doc.append("<tr><th>Account</th><th>Units</th><th>Currency</th><th>{}</th></tr>".format(report_currency))
-else:
-	dfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}\t{4:7.2f}'
-	dlfmt='\t{0}\t{1}\t{2}'
+else: # plain text
+	subcatfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}\t{4:7.2f}'
+	rowhidefmt='\t{0}\t{1}\t{2}'
 	tfmt='{0}\t{1:.2f}\t{2}\t{3:.2f}'
 	print_doc.append("Account\tUnits\tCurrency\t{}".format(report_currency))
 
@@ -350,30 +342,44 @@ if pargs.print_totals:
  
 # details tables
 max_narration=50 # characters long, or pad to this value
+details_count=0
 if pargs.details:
 	if pargs.html:
 		print_doc.append('<div class="pagebreak"></div>')
 		print_doc.append('<table>')
-		print_doc.append('<tr><th class="subheader">Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
-		afmt = '<tr class="subheader"><th class="subheader">{0}</th><td></td><td></td><td></td><td><b>{1:.2f}</b></td></tr>'
+		print_doc.append('<tr class="subcat"><th></th><th>Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
+		topcatfmt = '<tr class="topcat"><th></th><th>{0}</th><td></td><td></td><td></td><th>{1:.2f}</th></tr>'
 	else:
-		afmt = '{0}\t\t\t\t{1:.2f}'
+		topcatfmt = '{0}\t\t\t\t{1:.2f}'
 	for a in report_table:
 		if len(report_table[a][2]) > 0:
 			tot=0
 			for st in report_table[a][2]:
 				tot+=st[4]
-			print_doc.append(afmt.format(a,tot))
+			print_doc.append(topcatfmt.format(a,tot))
 		for st in report_table[a][2]:
-			print_doc.append(dfmt.format(st[0],st[1],st[2],st[3],st[4]))
+			if pargs.html: # details table within larger table
+				print_doc.append(subcatfmt.format(details_count,st[0],st[1],st[2],st[3],st[4]))
+				print_doc.append("<tr><td colspan=6>")
+				print_doc.append('<input type="checkbox" id="t{0}" checked />'.format(details_count))
+				details_count+=1
+				print_doc.append('<div class="hide">')
+				print_doc.append('<table>')
+			else:
+				print_doc.append(subcatfmt.format(st[0],st[1],st[2],st[3],st[4]))
 			# re-query to get actual ledger entries
 			qs="SELECT date, narration, change FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}$' ORDER BY date".format(pargs.start_date,pargs.end_date,st[0])
 			qr=query.run_query(entries,config,qs,()) 
+			if len(qr[1]) > 0:
+				print_doc.append(rowhidefmt.format("Date","Narration","Change"))
 			for r in qr[1]:
 				narr_str=r.narration
 				if len(r.narration) < max_narration:
 					narr_str = r.narration+' '*(max_narration-len(r.narration))
-				print_doc.append(dlfmt.format(r.date,narr_str[:max_narration],r.change[0][0]))
+				print_doc.append(rowhidefmt.format(r.date,narr_str[:max_narration],r.change[0][0]))
+			if pargs.html:
+				print_doc.append("</table></div></td></tr>")
+
 	if pargs.html:
 		print_doc.append('</table>')
 		

@@ -1,0 +1,68 @@
+table {
+	font-family: arial, sans-serif;
+	border-collapse: collapse;
+}
+
+/* debugging padding
+tr {
+ border:2px solid red;
+}
+*/
+
+th, td {
+	border: 1px #dddddd;
+	text-align: left;
+	padding: 2px;
+	padding-right: 30px;
+}
+tr.topcat {
+	border: 2px solid blue;
+	padding: 4px;
+}
+
+th.topcat {
+	padding: 4px;
+	text-align: left;
+}
+
+tr.subcat {
+ text-align: left;
+ border-bottom: 2px dashed darkgrey;
+ font-weight: bold;
+}
+
+@media print {
+	.pagebreak { page-break-before: always; }
+}
+
+/* code related to table toggles */
+/* hide the underlying check box and use label clicks for input */
+/* this allows us to put the label in the proper place in the table row */
+input {
+    display: none;
+}
+
+/* how the label for the input checkboxes displays */
+label {
+    text-align: left;
+    cursor: pointer;
+}
+
+/* TODO: modify on click */
+label:after{
+	content: "+";
+}
+
+/* alternating colors of subtable */
+div.hide tr.rowhide {
+ background-color: AliceBlue;
+}
+div.hide tr.rowhide:nth-child(even) {
+ background-color: LightYellow;
+}
+
+/* this is what hides subtables on a label click */
+input:checked+div.hide tr.rowhide {
+ display: none;
+}
+
