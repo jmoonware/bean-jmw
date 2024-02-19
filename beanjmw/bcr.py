@@ -219,10 +219,9 @@ for k in report_groups:
 			ma = months_ave # default value
 		if a in query_results and query_results[a]:
 			# get the Inventory...
-			# since this is a sum there should be only 1 position
 			positions=query_results[a][0].get_positions()
 			if len(positions) == 0:
-				sys.stderr.write("Warning: no positions in {0} for {1}\n".format(query_results[a],a))
+#				sys.stderr.write("Warning: no positions in {0} for {1}\n".format(query_results[a],a))
 				amount=Amount(Decimal('0'),report_currency)
 			else:
 				tot=sum([pi[0][0] for pi in positions])
@@ -265,7 +264,7 @@ if pargs.html:
 	print_doc.append('<link rel="stylesheet" href="{0}" >'.format(pargs.css_file))
 	print_doc.append("</head>")
 	print_doc.append("<body>")
-	subcatfmt='<tr class="subcat"><td><label for="t{0}"/></td><td>{1}</td><td>{2:.2f}</td><td>{3:.2f}</td><td>{4}</td><td><b>{5:1.2f}</b></td></tr>'
+	subcatfmt='<tr class="subcat"><td><label for="t{0}"/></td><td>{1}</td><td>{2:.2f}</td><td>{3}</td><td>{4}</td><td><b>{5:1.2f}</b></td></tr>'
 	rowhidefmt='<tr class="rowhide"><td>{0}</td><td>{1}</td><td></td><td></td><td>{2}</td></tr>'
 	tfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2}</td><td>{3:.2f}</td></tr>'
 	print_doc.append("<h1>{0} Report {1}</h1>".format(pargs.type,dt.date(dt.now()).isoformat()))
@@ -318,7 +317,10 @@ ax.barh(range(len(plot_values)),mult*np.array(plot_values,dtype=float)[idx])
 ax.set_yticks(range(len(plot_values)),labels=np.array(plot_labels)[idx])
 ax.invert_yaxis()
 ax.set_xlabel("Value ({0}{1}) ".format(report_currency,x_tag))
-ax.set_title("Total {0}: {1:.2f} {2}".format(pargs.type,sum(plot_values),report_currency))
+if pargs.monthly_ave:
+	ax.set_title("{0}: {1:,.0f} {2}/mo ({3:,.0f} tot)".format(pargs.type,sum(plot_values),report_currency,months_ave*float(sum(plot_values))))
+else:
+	ax.set_title("Total {0}: {1:,.0f} {2}".format(pargs.type,sum(plot_values),report_currency))
 plt.tight_layout()
 if pargs.html:
 	fn=os.path.split(os.path.splitext(pargs.filename)[0])[-1]+'_'+pargs.type+'.png'
@@ -347,7 +349,7 @@ if pargs.details:
 	if pargs.html:
 		print_doc.append('<div class="pagebreak"></div>')
 		print_doc.append('<table>')
-		print_doc.append('<tr class="subcat"><th></th><th>Account</th><th>Amount</th><th>Months</th><th>Entries</th><th>Total</th></tr>')
+		print_doc.append('<tr class="subcat"><th></th><th>Account</th><th>Amount</th><th></th><th>Entries</th><th>Total</th></tr>')
 		topcatfmt = '<tr class="topcat"><th></th><th>{0}</th><td></td><td></td><td></td><th>{1:.2f}</th></tr>'
 	else:
 		topcatfmt = '{0}\t\t\t\t{1:.2f}'
@@ -359,14 +361,14 @@ if pargs.details:
 			print_doc.append(topcatfmt.format(a,tot))
 		for st in report_table[a][2]:
 			if pargs.html: # details table within larger table
-				print_doc.append(subcatfmt.format(details_count,st[0],st[1],st[2],st[3],st[4]))
+				print_doc.append(subcatfmt.format(details_count,st[0],st[1],'',st[3],st[4]))
 				print_doc.append("<tr><td colspan=6>")
 				print_doc.append('<input type="checkbox" id="t{0}" checked />'.format(details_count))
 				details_count+=1
 				print_doc.append('<div class="hide">')
 				print_doc.append('<table>')
 			else:
-				print_doc.append(subcatfmt.format(st[0],st[1],st[2],st[3],st[4]))
+				print_doc.append(subcatfmt.format(st[0],st[1],'',st[3],st[4]))
 			# re-query to get actual ledger entries
 			qs="SELECT date, narration, change FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}$' ORDER BY date".format(pargs.start_date,pargs.end_date,st[0])
 			qr=query.run_query(entries,config,qs,()) 
