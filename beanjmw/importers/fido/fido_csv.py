@@ -149,9 +149,10 @@ class Importer(ImporterProtocol):
 				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{4}",fr.action)
 				nfr = nfr._replace(date = dm[0])
 			narration_str=" / ".join([fr.account,fr.action])
+			nfr = nfr._replace(date = dt.date(dt.strptime(nfr.date,'%m/%d/%Y')))
 			tn=Transaction(
 				meta=meta,
-				date=dt.date(dt.strptime(nfr.date,'%m/%d/%Y')),
+				date=nfr.date,
 				flag="*",
 				payee="Investment",
 				narration=narration_str,
@@ -163,8 +164,18 @@ class Importer(ImporterProtocol):
 
 		return(entries)
 
+	def get_trn_date(self,fr):
+		trn_date=None
+		if hasattr(fr,'date'):
+			trn_date=fr.date
+		elif hasattr(fr, 'tradeDate'):
+		# FIXME: when use tradeDate vs. settleDate?
+			trn_date=fr.tradeDate
+		return(trn_date)
+
 	def generate_investment_postings(self,fr):
 		postings=[]
+		trn_date = self.get_trn_date(fr)
 
 		# try to find investment action
 		# switch to use QIF format names
@@ -240,6 +251,7 @@ class Importer(ImporterProtocol):
 			postings[0]=p0._replace(
 				account = acct,
 				units=Amount(Decimal(fr.quantity),sec_currency),
+				cost = Cost(prc,self.currency,trn_date,""),
 				price = Amount(prc,self.currency),
 				meta = meta,
 			)
@@ -274,7 +286,8 @@ class Importer(ImporterProtocol):
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name, sec_account]),
 				units=Amount(Decimal(fr.quantity),sec_currency),
-		#		cost=None, # let Beancount FIFO booking rule take care
+				# let Beancount FIFO booking rule take care
+				cost=Cost(None,None,None,None),
 				price = Amount(prc,self.currency),
 			)
 			postings[1]=p1._replace(
@@ -284,7 +297,7 @@ class Importer(ImporterProtocol):
 			# interpolated posting
 			postings.append(
 				Posting(
-					account = self.account_name.replace('Assets','Income')+":PnL",
+					account = self.account_name.replace('Assets','Income')+":Gains",
 					units = NoneType(),
 					cost = None,
 					price = None,

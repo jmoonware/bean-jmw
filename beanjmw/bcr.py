@@ -56,17 +56,18 @@ ap.add_argument('-html','--html',required=False,action='store_true',default=Fals
 ap.add_argument('-np','--no_plot',required=False,action='store_true',default=False,help='No interactive plot - just print and exit')
 ap.add_argument('-pf','--price_file',required=False,default='prices.txt',help='Beancount price directive file to use')
 ap.add_argument('-cf','--css_file',required=False,default='bcr.css',help='Beancount report css file - default is "bcr.css", will be copied over if missing')
+ap.add_argument('-ea','--expand_all',required=False,default=False,action='store_true',help='Expand all details tables by default')
 
-pargs=ap.parse_args(sys.argv[1:])
+clargs=ap.parse_args(sys.argv[1:])
 
-if not pargs.type in ['Assets','Liabilities','Income','Expenses','Equity']:
-	sys.stderr.write("Invalid type {0}\n".format(pargs.type))
+if not clargs.type in ['Assets','Liabilities','Income','Expenses','Equity']:
+	sys.stderr.write("Invalid type {0}\n".format(clargs.type))
 	sys.exit()
 
-entries,errors,config=load_file(pargs.filename)
+entries,errors,config=load_file(clargs.filename)
 # first thing - create price table
-if os.path.exists(pargs.price_file):
-	price_entries, errors, config = load_file(pargs.price_file)
+if os.path.exists(clargs.price_file):
+	price_entries, errors, config = load_file(clargs.price_file)
 	price_table=ds.create_price_table(price_entries)
 else:
 	price_table=ds.create_price_table(entries)
@@ -82,11 +83,11 @@ if len(excluded_commodities) > 0:
 # if size changes, save updated version below
 pt_size = ds.size_price_table(price_table)
 
-acct_match=pargs.type
-if len(pargs.account) > 0:
-	acct_match==pargs.account
+acct_match=clargs.type
+if len(clargs.account) > 0:
+	acct_match==clargs.account
 
-qs="SELECT account, sum(position), count(position) FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}' GROUP BY account ORDER BY account".format(pargs.start_date,pargs.end_date,acct_match)
+qs="SELECT account, sum(position), count(position) FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}' GROUP BY account ORDER BY account".format(clargs.start_date,clargs.end_date,acct_match)
 
 # Note that the sum of positions is an Inventory
 # An inventory is a set of positions (here, usually one sum)
@@ -101,8 +102,8 @@ for r in qr[1]:
 	query_results[r[0]]=[r[1],r[2]] # Inventory, count, by account as key
 
 report_accounts=[]
-if pargs.monthly_ave:
-	months_ave=(dt.fromisoformat(pargs.end_date)-dt.fromisoformat(pargs.start_date)).days/30.412
+if clargs.monthly_ave:
+	months_ave=(dt.fromisoformat(clargs.end_date)-dt.fromisoformat(clargs.start_date)).days/30.412
 else:
 	months_ave=1
 
@@ -127,10 +128,10 @@ def save_config(path,report_elements):
 	return(sorted_re)
 
 # config file is tsv columns, with columns defined by ReportElement fields
-if pargs.report_config and os.path.isfile(pargs.report_config):
-	sys.stderr.write("Reading config {0}...\n".format(pargs.report_config))
+if clargs.report_config and os.path.isfile(clargs.report_config):
+	sys.stderr.write("Reading config {0}...\n".format(clargs.report_config))
 	table=[]
-	with open(pargs.report_config,'r') as f:
+	with open(clargs.report_config,'r') as f:
 		for l in f.readlines():
 			ls=l.strip()
 			if len(ls)==0:
@@ -151,28 +152,28 @@ if pargs.report_config and os.path.isfile(pargs.report_config):
 		if not le in config_accounts:
 			report_accounts.append(ReportElement(le,'y',0,'y','y'))
 	if len(report_accounts) > num_config: # new accounts found 
-		report_accounts = save_config(pargs.report_config,report_accounts)
-	sys.stderr.write("{0} accounts ({1} new) in {2}\n".format(len(report_accounts),len(report_accounts)-num_config,pargs.report_config))
+		report_accounts = save_config(clargs.report_config,report_accounts)
+	sys.stderr.write("{0} accounts ({1} new) in {2}\n".format(len(report_accounts),len(report_accounts)-num_config,clargs.report_config))
 else:
 	# report on all accounts by default, already sorted above
 	for k in account_keys:
 		report_accounts.append(ReportElement(k,'y',0,'y','y'))
 	# now save a copy
-	if os.path.isfile(report_config_default) and not pargs.clobber:
+	if os.path.isfile(report_config_default) and not clargs.clobber:
 		sys.stderr.write("{} exists - use -clobber option to overwrite\n".format(report_config_default))
 	else:
 		report_accounts = save_config(report_config_default,report_accounts)
 
-level=int(pargs.level) # level'th token in a:b:... format split on :
+level=int(clargs.level) # level'th token in a:b:... format split on :
 # take out excluded accounts 
-filtered_report_accounts=[e for e in report_accounts if re.match(pargs.type,e.account) and str(e.include).upper()=='Y']
+filtered_report_accounts=[e for e in report_accounts if re.match(clargs.type,e.account) and str(e.include).upper()=='Y']
 # take out ignored commodities too 
 report_account_names=[e.account for e in filtered_report_accounts]
 toks=[e.account.split(':') for e in filtered_report_accounts]
 
 # needed for printing below
 if len(filtered_report_accounts)==0:
-	sys.stderr.write("Nothing to report for {0}, {1}\n".format(pargs.type,pargs.account))
+	sys.stderr.write("Nothing to report for {0}, {1}\n".format(clargs.type,clargs.account))
 	sys.exit()
 else:
 	max_account_len = max([len(e.account) for e in filtered_report_accounts])
@@ -205,7 +206,7 @@ while ci < len(toks):
 report_table={}
 
 # use values as of this date to convert to report currency
-quote_date=dt.date(dt.fromisoformat(pargs.end_date))
+quote_date=dt.date(dt.fromisoformat(clargs.end_date))
 
 for k in report_groups:
 	v={} # by currency
@@ -247,12 +248,12 @@ for k in report_groups:
 
 print_doc=[]
 # Sigh. It is 2023, still writing print statements of shitty HTML...
-if pargs.html:
+if clargs.html:
 	# make sure we have css file
-	if not os.path.isfile(pargs.css_file):
+	if not os.path.isfile(clargs.css_file):
 		import beanjmw
 		mod_path = beanjmw.__path__[0]
-		copy_file = os.path.join(mod_path,pargs.css_file)
+		copy_file = os.path.join(mod_path,clargs.css_file)
 		if os.path.isfile(copy_file):
 			os.system("cp {0} .".format(copy_file))
 		else:
@@ -261,15 +262,15 @@ if pargs.html:
 	print_doc.append("<!DOCTYPE html>")
 	print_doc.append("<html>")
 	print_doc.append('<head>')
-	print_doc.append('<link rel="stylesheet" href="{0}" >'.format(pargs.css_file))
+	print_doc.append('<link rel="stylesheet" href="{0}" >'.format(clargs.css_file))
 	print_doc.append("</head>")
 	print_doc.append("<body>")
 	subcatfmt='<tr class="subcat"><td><label for="t{0}"/></td><td>{1}</td><td>{2:.2f}</td><td>{3}</td><td>{4}</td><td><b>{5:1.2f}</b></td></tr>'
-	rowhidefmt='<tr class="rowhide"><td>{0}</td><td>{1}</td><td></td><td></td><td>{2}</td></tr>'
+	rowhidefmt='<tr class="rowhide"><td> </td><td>{0}</td><td>{1}</td><td></td><td>{2}</td></tr>'
 	tfmt='<tr><td>{0}</td><td>{1:.2f}</td><td>{2}</td><td>{3:.2f}</td></tr>'
-	print_doc.append("<h1>{0} Report {1}</h1>".format(pargs.type,dt.date(dt.now()).isoformat()))
-	print_doc.append("<h2>Period from {0} to {1}</h2>".format(pargs.start_date,pargs.end_date))
-	if pargs.monthly_ave:
+	print_doc.append("<h1>{0} Report {1}</h1>".format(clargs.type,dt.date(dt.now()).isoformat()))
+	print_doc.append("<h2>Period from {0} to {1}</h2>".format(clargs.start_date,clargs.end_date))
+	if clargs.monthly_ave:
 		print_doc.append("<h2>Average Per Month</h2>")
 	print_doc.append("<table>")
 	print_doc.append("<tr>")
@@ -278,7 +279,7 @@ if pargs.html:
 	print_doc.append("<tr><th>Account</th><th>Units</th><th>Currency</th><th>{}</th></tr>".format(report_currency))
 else: # plain text
 	subcatfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}\t{4:7.2f}'
-	rowhidefmt='\t{0}\t{1}\t{2}'
+	rowhidefmt='\t\t{0}\t{1}\t{2}'
 	tfmt='{0}\t{1:.2f}\t{2}\t{3:.2f}'
 	print_doc.append("Account\tUnits\tCurrency\t{}".format(report_currency))
 
@@ -292,7 +293,7 @@ for a in report_table:
 		if not currency in tot:
 			tot[currency]=Decimal('0.00000')
 		tot[currency]+=v_rc[currency]
-		if v[currency]!=0 or pargs.zero_entries:
+		if v[currency]!=0 or clargs.zero_entries:
 			if currency!=report_currency: 
 				plot_labels.append(':'.join([a,currency]))
 			else:
@@ -300,14 +301,14 @@ for a in report_table:
 			plot_values.append(v_rc[currency])
 			print_doc.append(tfmt.format(a,v[currency],currency,v_rc[currency]))
 
-if pargs.html:
+if clargs.html:
 	print_doc.append("</table>")
 	print_doc.append("</td>")
 
 fig, ax = plt.subplots()
 fig.set_size_inches(5,7)
 idx = np.argsort(plot_values)[::-1]
-if pargs.type=='Assets':
+if clargs.type=='Assets':
 	mult=1e-3
 	x_tag=' k'
 else:
@@ -317,13 +318,13 @@ ax.barh(range(len(plot_values)),mult*np.array(plot_values,dtype=float)[idx])
 ax.set_yticks(range(len(plot_values)),labels=np.array(plot_labels)[idx])
 ax.invert_yaxis()
 ax.set_xlabel("Value ({0}{1}) ".format(report_currency,x_tag))
-if pargs.monthly_ave:
-	ax.set_title("{0}: {1:,.0f} {2}/mo ({3:,.0f} tot)".format(pargs.type,sum(plot_values),report_currency,months_ave*float(sum(plot_values))))
+if clargs.monthly_ave:
+	ax.set_title("{0}: {1:,.0f} {2}/mo ({3:,.0f} tot)".format(clargs.type,sum(plot_values),report_currency,months_ave*float(sum(plot_values))))
 else:
-	ax.set_title("Total {0}: {1:,.0f} {2}".format(pargs.type,sum(plot_values),report_currency))
+	ax.set_title("Total {0}: {1:,.0f} {2}".format(clargs.type,sum(plot_values),report_currency))
 plt.tight_layout()
-if pargs.html:
-	fn=os.path.split(os.path.splitext(pargs.filename)[0])[-1]+'_'+pargs.type+'.png'
+if clargs.html:
+	fn=os.path.split(os.path.splitext(clargs.filename)[0])[-1]+'_'+clargs.type+'.png'
 	plt.savefig(fn)
 	print_doc.append("<td>")
 	print_doc.append('<img src="{0}">'.format(fn))
@@ -331,22 +332,22 @@ if pargs.html:
 	print_doc.append("</tr>")
 	print_doc.append("</table>")
 else:
-	if not pargs.no_plot:
+	if not clargs.no_plot:
 		plt.show()
 
-if pargs.print_totals:
+if clargs.print_totals:
 	gt=0
 	for c in tot:
 		gt+=tot[c]
 		print_doc.append("TOTAL {0}\t{1:.2f}".format(c,tot[c]))
 	print_doc.append("---------")
-	print_doc.append("{0}\t{1}\tGrandTotal{2}\t{3:.2f}".format(pargs.start_date,pargs.end_date,pargs.type,gt))
+	print_doc.append("{0}\t{1}\tGrandTotal{2}\t{3:.2f}".format(clargs.start_date,clargs.end_date,clargs.type,gt))
  
 # details tables
 max_narration=50 # characters long, or pad to this value
 details_count=0
-if pargs.details:
-	if pargs.html:
+if clargs.details:
+	if clargs.html:
 		print_doc.append('<div class="pagebreak"></div>')
 		print_doc.append('<table>')
 		print_doc.append('<tr class="subcat"><th></th><th>Account</th><th>Amount</th><th></th><th>Entries</th><th>Total</th></tr>')
@@ -360,17 +361,20 @@ if pargs.details:
 				tot+=st[4]
 			print_doc.append(topcatfmt.format(a,tot))
 		for st in report_table[a][2]:
-			if pargs.html: # details table within larger table
+			if clargs.html: # details table within larger table
 				print_doc.append(subcatfmt.format(details_count,st[0],st[1],'',st[3],st[4]))
 				print_doc.append("<tr><td colspan=6>")
-				print_doc.append('<input type="checkbox" id="t{0}" checked />'.format(details_count))
+				if clargs.expand_all:
+					print_doc.append('<input type="checkbox" id="t{0}"/>'.format(details_count))
+				else:
+					print_doc.append('<input type="checkbox" id="t{0}" checked/>'.format(details_count))
 				details_count+=1
 				print_doc.append('<div class="hide">')
 				print_doc.append('<table>')
 			else:
 				print_doc.append(subcatfmt.format(st[0],st[1],'',st[3],st[4]))
 			# re-query to get actual ledger entries
-			qs="SELECT date, narration, change FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}$' ORDER BY date".format(pargs.start_date,pargs.end_date,st[0])
+			qs="SELECT date, narration, change FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}$' ORDER BY date".format(clargs.start_date,clargs.end_date,st[0])
 			qr=query.run_query(entries,config,qs,()) 
 			if len(qr[1]) > 0:
 				print_doc.append(rowhidefmt.format("Date","Narration","Change"))
@@ -379,28 +383,28 @@ if pargs.details:
 				if len(r.narration) < max_narration:
 					narr_str = r.narration+' '*(max_narration-len(r.narration))
 				print_doc.append(rowhidefmt.format(r.date,narr_str[:max_narration],r.change[0][0]))
-			if pargs.html:
+			if clargs.html:
 				print_doc.append("</table></div></td></tr>")
 
-	if pargs.html:
+	if clargs.html:
 		print_doc.append('</table>')
 		
 
 # print out ledger entries if asked
-if pargs.print_ledger: 
+if clargs.print_ledger: 
 	cols={'date':0,'narration':1,'account':2,'position':3}
-	qs="SELECT "+','.join(cols.keys())+" FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}' ORDER BY account,date".format(pargs.start_date,pargs.end_date,pargs.account)
+	qs="SELECT "+','.join(cols.keys())+" FROM OPEN ON {0} CLOSE ON {1} WHERE account ~ '{2}' ORDER BY account,date".format(clargs.start_date,clargs.end_date,clargs.account)
 
 	qr=query.run_query(entries,config,qs,()) 
 	for r in qr[1]:
 		print_doc.append('\t'.join([str(r[cols[k]]) for k in cols]))
 
-if pargs.html:
+if clargs.html:
 	print_doc.append("</body>")
 	print_doc.append("</html>")
 
 # save the price table
 if pt_size!=ds.size_price_table(price_table):
-	ds.save_price_table(pargs.price_file,price_table)
+	ds.save_price_table(clargs.price_file,price_table)
 
 print('\n'.join(print_doc))

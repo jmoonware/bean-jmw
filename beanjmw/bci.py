@@ -30,7 +30,7 @@ remove_duplicates=True
 try:
     import accts
 except ModuleNotFoundError as mnf:
-    sys.stderr.write("Warning: did not find accts.py\n\tMake sure you create one in the downloads directory \n\tfrom which you should execute this module\n")
+    sys.stderr.write("Warning: did not find accts.py\n\tMake sure you create one in the downloads directory \n\tfrom where you should execute this module\n")
     import example_accts as accts
 
 CONFIG = accts.CONFIG

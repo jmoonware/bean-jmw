@@ -149,6 +149,15 @@ class Importer(ImporterProtocol):
 		"""
 		return
 
+	def get_trn_date(self,fr):
+		trn_date=None
+		if hasattr(fr,'date'):
+			trn_date=fr.date
+		elif hasattr(fr, 'tradeDate'):
+			# FIXME: when use tradeDate vs. settleDate?
+			trn_date=fr.tradeDate
+		return(trn_date)
+
 	def get_transactions(self,transactions):
 		entries=[]
 		for ofxr in transactions:
@@ -157,12 +166,8 @@ class Importer(ImporterProtocol):
 				narration_str=" / ".join([ofxr.payee, ofxr.memo,ofxr.type])
 			else:
 				narration_str=" / ".join([ofxr.memo,ofxr.type])
-			if hasattr(ofxr,'date'):
-				trn_date=ofxr.date
-			elif hasattr(ofxr, 'tradeDate'):
-				# FIXME: when use tradeDate vs. settleDate?
-				trn_date=ofxr.tradeDate
-			else:
+			trn_date = self.get_trn_date(ofxr)
+			if not trn_date:
 				sys.stderr.write("Unknown date for transaction {0}\n".format(ofxr))
 				continue
 			tn=Transaction(
@@ -181,7 +186,7 @@ class Importer(ImporterProtocol):
 
 	def generate_investment_postings(self,fr):
 		postings=[]
-
+		trn_date=dt.date(self.get_trn_date(fr))
 		# try to find investment action
 		# switch to use QIF format names
 		# TODO: Re-use code in qif importer
@@ -248,6 +253,7 @@ class Importer(ImporterProtocol):
 				account = acct,
 				units=Amount(qty,sec_currency),
 				price = Amount(prc,self.currency),
+				cost = Cost(prc,self.currency,trn_date,""),
 				meta = meta,
 			)
 			aname='Cash'
@@ -281,7 +287,8 @@ class Importer(ImporterProtocol):
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name, sec_account]),
 				units=Amount(fr.units,sec_currency),
-		#		cost=None, # let Beancount FIFO booking rule take care
+				# let Beancount FIFO booking rule take care
+				cost=Cost(None,None,None,None),
 				price = Amount(prc,self.currency),
 			)
 			postings[1]=p1._replace(
@@ -291,7 +298,7 @@ class Importer(ImporterProtocol):
 			# interpolated posting
 			postings.append(
 				Posting(
-					account = self.account_name.replace('Assets','Income')+":PnL",
+					account = self.account_name.replace('Assets','Income')+":Gains",
 					units = NoneType(),
 					cost = None,
 					price = None,
@@ -318,6 +325,7 @@ class Importer(ImporterProtocol):
 				account = ':'.join([self.account_name,sec_account]),
 				units = Amount(qty,sec_currency),
 				price = Amount(prc,self.currency),
+				cost = Cost(prc,self.currency,trn_date,""),
 				meta = meta, 
 			)
 		elif ofx_action in ['IntInc','MiscInc']:
