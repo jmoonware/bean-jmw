@@ -5,9 +5,9 @@ from beancount.ingest.cache import _FileMemo
 from beancount.parser.parser import parse_string
 from beancount.parser.printer import format_entry
 
-qif_examples=['test1.qif','test2.qif']
-qif_accounts=['Assets:US:BofA:Checking','Assets:US:Fidelity:F1234']
-qif_lengths=[23,18]
+qif_examples=['test1.qif','test2.qif','test3.qif']
+qif_accounts=['Assets:US:BofA:Checking','Assets:US:Fidelity:F1234','Assets:US:BofA:Checking']
+qif_lengths=[23,18,12]
 
 import os
 import glob

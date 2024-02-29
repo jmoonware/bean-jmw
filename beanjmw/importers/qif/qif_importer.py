@@ -139,6 +139,8 @@ class Importer(ImporterProtocol):
 				# and mangle check number so payee isn't assigned from file
 				if self.is_split_check(qt):
 					for st in qt.splits:
+						# need a new meta for each split entry
+						meta=new_metadata(file.name, tno)
 						payee_str="SPLIT "
 						if st.memo:
 							payee_str = payee_str + st.memo
