@@ -1,4 +1,4 @@
-from beanjmw.bci import process_extracted_entries
+from beanjmw.bci import process_extracted_entries, filter_entries
 import beanjmw.bci as bci
 from beanjmw.importers.ofx import ofx_general
 from beanjmw.importers.qif import qif_importer
@@ -40,17 +40,23 @@ def test_ImportProc():
 #		[print(e.message) for e in valid_errors]
 		# should be some validation errors with raw import
 		assert len(valid_errors)==en
-	# this creates 'unassigned.yaml' files in the default path
+	# this re-loads all entries as found by 'identify' and as ingest would
+	bci.account_filter=None
+	file_entries, file_accounts = filter_entries(None)
+	bci.account_filter="Checking"
 	proc_ent = process_extracted_entries(file_entries, None)
 	# make re-named copies and re-process without errors
 	# This will give a lot of "UNASSIGNED" accounts of course
 	yaml_files = glob.glob(os.path.join(bci.importers.filters.assign.dir_path,"*_unassigned.yaml"))
 	assert len(yaml_files) > 1
+	# test that the generated yaml files are valid
 	for yf in yaml_files:
 		shutil.copy(yf, yf.replace('_unassigned',''))
-	# this uses the yaml files in the test path to fully assign 
-#	bci.importers.filters.assign.dir_path=os.path.join(cpath,'yaml_test')
 	# now reprocess
+	# this re-loads all entries again...
+	bci.account_filter=None
+	file_entries, file_accounts = filter_entries(None)
+	bci.account_filter="Checking"
 	proc_assign_ent = process_extracted_entries(file_entries, None)
 	# validate the combined entries from all files
 	all_entries=[]
