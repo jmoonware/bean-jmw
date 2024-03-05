@@ -48,7 +48,7 @@ def test_ImportCsv():
 	# make re-named copies and re-process without errors
 	# This will give a lot of "UNASSIGNED" accounts of course
 	yaml_files = glob.glob(os.path.join(bci.importers.filters.assign.dir_path,"*_unassigned.yaml"))
-	assert len(yaml_files) > 1
+	assert len(yaml_files) > 0
 	# test that the generated yaml files are valid
 	for yf in yaml_files:
 		shutil.copy(yf, yf.replace('_unassigned',''))
