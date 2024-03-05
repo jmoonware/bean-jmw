@@ -87,6 +87,8 @@ def process_extracted_entries(extracted_entries_list, ledger_entries):
     """
 
     filtered_entries_list, accounts = filter_entries(extracted_entries_list)
+    if len(filtered_entries_list)==0:
+        return([("Nothing to do",[])])
     
     # Now we can get the check and account assignment yaml files
 	# Assign payees to check via <account>_payees.yaml file for account
