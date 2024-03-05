@@ -24,9 +24,11 @@ qif_investment_actions=[
 default_open_date='2000-01-01'
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,currency='USD'):
+	def __init__(self,account_name,currency='USD',account_number=''):
 		self.account_name=account_name
 		self.currency=currency
+		# TODO: use account number
+		self.account_number=account_number
 		self.account_currency={} # added as discovered
 		super().__init__()
 

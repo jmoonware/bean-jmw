@@ -25,7 +25,7 @@ def test_Init():
 		assert qi.identify(fm)
 		entries = qi.extract(fm)
 		assert len(entries)==ql
-		print('\n'.join([format_entry(e) for e in entries]))
+#		print('\n'.join([format_entry(e) for e in entries]))
 		# this is what bean-check does mostly
 		parse_entries,errs,config=parse_string('\n'.join([format_entry(e) for e in entries]))
 		assert len(errs)==0

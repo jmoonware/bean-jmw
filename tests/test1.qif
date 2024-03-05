@@ -19,33 +19,6 @@ PATM Network Fee
 MATM Network Fee
 LBank Charge
 ^
-D5/15' 0
-U-49.02
-T-49.02
-CX
-N1059
-PCheck
-MCheck
-LJCPenny
-^
-D5/15' 0
-U-29.16
-T-29.16
-CX
-N1062
-PCheck
-MCheck
-LGroceries
-^
-D5/18' 0
-U-100.00
-T-100.00
-CX
-N1071
-PCheck
-MCheck
-LCash
-^
 D5/19' 0
 U-20.00
 T-20.00

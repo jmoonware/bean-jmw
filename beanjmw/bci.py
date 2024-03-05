@@ -1,6 +1,5 @@
 # 
 # bci.py: custom script for beancount to ingest dowloaded files
-# put all your data in a parallel directory named 'private'
 #
 import sys
 from os import path
@@ -76,7 +75,7 @@ def process_extracted_entries(extracted_entries_list, ledger_entries):
     for (fn,entries),(f,acct) in zip(extracted_entries_list,accounts):
         if f!=fn:
             sys.stderr.write("Warning: file/account mismatch {0} {1} {2}\n".format(fn,f,acct))
-        if "CHECKING" in acct:
+        if "CHECKING" in acct.upper():
             new_entries_list.append((fn,assign_check_payees(entries,acct,fn)))
         else:
             new_entries_list.append((fn,entries))
@@ -90,5 +89,6 @@ def process_extracted_entries(extracted_entries_list, ledger_entries):
 
     return deduped_entries_list
 
-# Invoke the script.
-scripts_utils.ingest(CONFIG, hooks=[process_extracted_entries])
+if __name__=='main':
+	# Invoke the script.
+	scripts_utils.ingest(CONFIG, hooks=[process_extracted_entries])

@@ -3,7 +3,7 @@ import beancount as bc
 from beancount.core.data import Posting,Open,Transaction,Balance,Commodity,Price,Event
 from beancount.parser import printer
 from beancount.ingest.similar import find_similar_entries
-from beancount.core.data import D, Decimal
+from beancount.core.data import D, Decimal, new_metadata
 from beancount.core import amount
 import numpy as np 
 import re
@@ -19,6 +19,8 @@ remove_duplicates=True
 remove_zero_value_transactions=True
 missing_payee_tag="UNASSIGNED"
 quiet=True
+# top-level accounts - by definition
+top_accounts = ['Assets','Expenses','Liabilities','Income','Equity']
 
 def is_check(e):
 	""" Determines if it is a check from narration and returns check number
@@ -26,11 +28,20 @@ def is_check(e):
 	"""
 	cn = None
 	if type(e)==Transaction:
-		checkno_match = re.search('CHECK\s+('+numeric_regex+')',e.narration.upper())
+		checkno_match = re.search('CHECK\\s+('+numeric_regex+')',e.narration.upper())
 		if checkno_match:
 			cn=int(checkno_match.groups()[0])
 	return(cn)
-	
+
+def update_narration(e,payee,cn):
+	# format payee / memo / Check #
+	nsplt=e.narration.split('/')
+	memo_str=""
+	if len(nsplt) > 1:
+		memo_str=nsplt[1]
+	nstr=" / ".join([payee,memo_str,' '.join(["Check",str(cn)])])
+	return e._replace(narration=nstr)
+
 def assign_check_payees(extracted_entries,account,filename=""):
 	""" Assign check payees from a yaml file by number
 		Call this function only for checking accounts
@@ -63,17 +74,12 @@ def assign_check_payees(extracted_entries,account,filename=""):
 		cn = is_check(e)
 		if cn:
 			if cn in payees_for_check:
-				# format payee / memo / Check #
-				nsplt=e.narration.split('/')
-				memo_str=""
-				if len(nsplt) > 1:
-					memo_str=nsplt[1]
-				nstr=" / ".join([payees_for_check[cn],memo_str,' '.join(["Check",str(cn)])])
-				new_entry=e._replace(narration=nstr)
+				new_entry = update_narration(e, payees_for_check[cn], cn)
 			else: # unassigned check number
 				# previously categorized, probably by Quicken
 				if "category" in e.meta:
 					unassigned_checks[cn]=e.meta['category']
+					new_entry = update_narration(e, unassigned_checks[cn], cn)
 				else:
 					amt=""
 					if len(e.postings)>0:
@@ -252,7 +258,7 @@ def update_unassigned(e, unassigned_payees):
 	unassigned_payee="EMPTY"
 	if 'category' in e.meta:
 		# if it is a valid top-level account, use as-is
-		if e.meta['category'].split(':')[0] in ['Assets','Expenses','Liabilities','Income','Equity']:
+		if e.meta['category'].split(':')[0] in top_accounts:
 			pre_assigned_category=e.meta['category']
 		else: # else assume it is an Expense
 			pre_assigned_category=':'.join(["Expenses",e.meta['category']])
@@ -271,6 +277,15 @@ def update_unassigned(e, unassigned_payees):
 		if not unassigned_payees[reg_key] in unassigned_payees:
 			unassigned_payees[unassigned_payees[reg_key]]=unassigned_payees[reg_key]
 		reg_key=pre_assigned_category # use this as new key in unassigned
+	# final clean-up of reg_key
+	# remove top level accounts in key
+	for tac in top_accounts:
+		reg_key=reg_key.replace(tac+":","")
+	# don't allow a regex pattern like these
+	for reserved in ["[Cc]heck"]:
+		if re.match(reserved,reg_key):
+			reg_key="UNASSIGNED"
+			pre_assigned_category="Expense:UNASSIGNED"
 	unassigned_payees[reg_key]=pre_assigned_category
 	return
 
@@ -335,7 +350,7 @@ def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 					if not p.account in account_list:
 						account_list.append(p.account)
 	# open accounts that aren't already open
-	open_entries=[Open({},default_account_open_date,a,["USD"],None) for a in account_list if not a in opened_accounts]
+	open_entries=[Open(new_metadata("fn",0),dt.date(dt.fromisoformat(default_account_open_date)),a,["USD"],None) for a in account_list if not a in opened_accounts]
 
 	return([("new_opens",open_entries)]+new_entries)
 

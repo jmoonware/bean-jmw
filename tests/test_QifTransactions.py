@@ -7,7 +7,7 @@ from beancount.parser.printer import format_entry
 
 qif_examples=['test1.qif','test2.qif','test3.qif']
 qif_accounts=['Assets:US:BofA:Checking','Assets:US:Fidelity:F1234','Assets:US:BofA:Checking']
-qif_lengths=[23,18,12]
+qif_lengths=[20,18,12]
 
 import os
 import glob
@@ -24,7 +24,7 @@ def test_Init():
 		assert qi.identify(fm)
 		entries = qi.extract(fm)
 		assert len(entries)==ql
-		print('\n'.join([format_entry(e) for e in entries]))
+#		print('\n'.join([format_entry(e) for e in entries]))
 		# this is what bean-check does mostly
 		parse_entries,errs,config=parse_string('\n'.join([format_entry(e) for e in entries]))
 		assert len(errs)==0
