@@ -89,6 +89,6 @@ def process_extracted_entries(extracted_entries_list, ledger_entries):
 
     return deduped_entries_list
 
-if __name__=='main':
+if __name__=='__main__':
 	# Invoke the script.
 	scripts_utils.ingest(CONFIG, hooks=[process_extracted_entries])
