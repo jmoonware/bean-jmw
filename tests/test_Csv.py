@@ -12,12 +12,12 @@ import shutil
 import os, glob
 
 # note lex order
-t_examples=['discover6789.csv']
-t_accounts=['Liabilities:US:Discover:D6789']
-t_acct_nums=['6789']
+t_examples=['discover6789.csv','discover6789.qif']
+t_accounts=['Liabilities:US:Discover:D6789','Liabilities:US:Discover:D6789']
+t_acct_nums=['6789','6789']
 # number of validation errors in non-processed entries
-t_errs=[29] 
-t_imp = [csv_general]
+t_errs=[29, 44] 
+t_imp = [csv_general, qif_importer]
 acct_filter="Discover"
 
 # this discovers test dir if in path tree

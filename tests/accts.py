@@ -9,9 +9,10 @@ discover_csv_map={"Trans. Date":'date',"Post Date":'postdate',"Description":'des
 
 CONFIG = [
 
-csv_general.Importer("Liabilities:US:Discover:Blarg",account_number="6789",csv_map=discover_csv_map),
+csv_general.Importer("Liabilities:US:Discover:D6789",account_number="6789",csv_map=discover_csv_map),
 ofx_general.Importer("Assets:US:BofA:Checking", account_number="[0-9]+6789"),
 fido_csv.Importer("Assets:US:Fidelity:F1234"),
 qif_importer.Importer("Assets:US:BofA:Checking"),
+qif_importer.Importer("Liabilities:US:Discover:D6789"),
 
 ]
