@@ -45,10 +45,13 @@ from collections import namedtuple
 EtradeRow = namedtuple('EtradeRow',etrade_cols)
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,currency='USD'):
+	def __init__(self,account_name,currency='USD',account_number=None):
 		self.account_name=account_name
-		self.acct_tok=self.account_name.split(':')[-1]
-		self.acct_tail=self.acct_tok[len(self.acct_tok)-4:] 
+		if not account_number:
+			acct_tok=self.account_name.split(':')[-1]
+			self.acct_tail=acct_tok[-4:] 
+		else:
+			self.acct_tail=account_number[-4:]
 		self.currency=currency
 		self.account_currency={} # added as discovered
 		super().__init__()
@@ -286,7 +289,7 @@ class Importer(ImporterProtocol):
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name, sec_account]),
 				units=Amount(Decimal(fr.Quantity),sec_currency),
-		#		cost=None, # let Beancount FIFO booking rule take care
+				cost=Cost(None,None,None,None), 
 				price = Amount(prc,self.currency),
 			)
 			postings[1]=p1._replace(
@@ -296,12 +299,13 @@ class Importer(ImporterProtocol):
 			# interpolated posting
 			postings.append(
 				Posting(
-					account = self.account_name.replace('Assets','Income')+":PnL",
-					units = NoneType(),
+					account = self.account_name.replace('Assets','Income')+":Gains",
+#					units = NoneType(),
+					units = None,
 					cost = None,
 					price = None,
 					flag = None,
-					meta=None,
+					meta={'__residual__':True},
 				)
 			)
 		elif etrade_action == 'Dividend':
