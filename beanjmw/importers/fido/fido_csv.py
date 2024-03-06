@@ -37,10 +37,13 @@ from collections import namedtuple
 FidoRow = namedtuple('FidoRow',fido_row_fields)
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,currency='USD'):
+	def __init__(self,account_name,currency='USD',account_number=None):
 		self.account_name=account_name
-		self.acct_tok=self.account_name.split(':')[-1]
-		self.acct_tail=self.acct_tok[len(self.acct_tok)-4:] 
+		if not account_number:
+			acct_tok=self.account_name.split(':')[-1]
+			self.acct_tail=acct_tok[-4:] 
+		else:
+			self.acct_tail=account_number[-4:]
 		self.currency=currency
 		self.account_currency={} # added as discovered
 		super().__init__()
@@ -302,7 +305,7 @@ class Importer(ImporterProtocol):
 					cost = None,
 					price = None,
 					flag = None,
-					meta=None,
+					meta={'__residual__':True}
 				)
 			)
 		elif fido_action in ['Div','CGShort','CGLong','CGMid']:
@@ -379,6 +382,12 @@ class Importer(ImporterProtocol):
 	
 		return(postings)
 
+	# remove single quotes if present...
+	def unquote(self,s):
+		unquote=s
+		if s and len(s) > 0 and s[0]=="'" and s[-1]=="'":
+			unquote = s[1:-1]
+		return unquote
 
 	def create_table(self,lines):
 		""" Returns a list of (mostly) unparsed string tokens
@@ -396,7 +405,7 @@ class Importer(ImporterProtocol):
 
 		# make sure the columns haven't changed... 
 		is_fido=True
-		cols=[c.strip() for c in lines[nl+2].split(',')]
+		cols=[self.unquote(c.strip()) for c in lines[nl+2].split(',')]
 		for c,fc in zip(cols,fido_cols):
 			if c!=fc:
 				is_fido=False
@@ -407,7 +416,7 @@ class Importer(ImporterProtocol):
 	
 		# it's got the right columns, now extract the data	
 		for l in lines[nl+3:]:
-			ctoks=l.split(',')
+			ctoks=[self.unquote(c.strip()) for c in l.split(',')]
 			if len(ctoks) >= len(fido_cols):
 				if ctoks[1][len(ctoks[1])-4:]==self.acct_tail:
 					# remove double quotes
