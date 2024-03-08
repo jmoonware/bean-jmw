@@ -3,15 +3,13 @@
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
+from beanjmw.importers import importer_shared
 
 import os,sys, re
 
 from datetime import datetime as dt
 
-# remove these chars as Beancount accounts can't have them
-quicken_category_remove=[' ','\'','&','-','+','.']
-
-# all possible actions for investments
+# all possible actions for Fido investments, map to universal
 investment_actions={
 'BUY':'Buy', 
 'YOU BOUGHT':'Buy', 
@@ -29,8 +27,11 @@ investment_actions={
 
 default_open_date='2000-01-01'
 
+# actual column names in download
 fido_cols = ['Run Date', 'Account', 'Action', 'Symbol', 'Security Description', 'Security Type', 'Quantity', 'Price ($)', 'Commission ($)', 'Fees ($)', 'Accrued Interest ($)', 'Amount ($)', 'Settlement Date']
 
+# corresponding UniRow fields - note that any tag not in a UniRow will be unmapped (by design)
+# For example, accrued_interest is unmapped in UniRow but is a Fido column
 fido_row_fields = ['date', 'account', 'action', 'symbol', 'security_description', 'type', 'quantity', 'price', 'commission', 'fees', 'accrued_interest', 'amount', 'settlement_date']
 
 from collections import namedtuple
@@ -67,7 +68,7 @@ class Importer(ImporterProtocol):
 			for l in head_lines[ln+3:]:
 				toks=l.split(',')
 				if len(toks) > 1:
-					fa=toks[1]
+					fa=self.unquote(toks[1])
 					if fa[len(fa)-4:]==self.acct_tail:
 						found=True
 						break
@@ -84,19 +85,13 @@ class Importer(ImporterProtocol):
           A list of new, imported directives (usually mostly Transactions)
           extracted from the file.
 		"""
-		entries=[]
-		try:
-			with open(file.name,'r') as f:
-				lines=f.readlines()
-		except:
-			sys.stderr.write("Unable to open or parse {0}".format(file.name))
-			return(entries)
-		import_table=self.create_table(lines)
+#		return(importer_shared.extract(file, self))
+		import_table=self.create_table(file.name)
 		entries = self.get_transactions(import_table)
 
 		# add open directives; some may be removed in dedup
 		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
+		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
 		return(open_entries + entries)
 
 	def file_account(self, file):
@@ -136,6 +131,45 @@ class Importer(ImporterProtocol):
           default.)
 		"""
 		return
+
+	def map_actions(self,urd):
+		# now map action
+		fido_action=None
+		if "action" in urd:
+			for ia in investment_actions:
+				if ia in urd["action"].upper(): # found a match
+					fido_action=investment_actions[ia]
+					break
+			# unsure what we should do here so warn
+			if not fido_action:
+				sys.stderr.write("Unknown inv action: {0} in {1}\n".format(urd["action"],urd))
+		# replace with universal action
+		urd["action"]=fido_action
+		return
+
+	def map_universal_table(self,table):
+		""" Translate bespoke input table into universal single-line records
+
+		Args:
+			table, with columns defined at top
+		Returns:
+			list of UniRow records, mapped from input table
+		"""
+		unirows=[]
+		urow = importer_shared.UniRow()
+		for tr in table:
+			urd = {}
+			for rf,val in zip(fido_row_fields,tr):
+				if hasattr(urow, rf):
+					urd[rf] = val
+			map_actions(urd)
+			# give us a narration for transaction
+			t_info = [x for x in [urd['payee'],urd['memo'],urd['type']]]
+			if len(t_info) > 0 and not 'narration' in urd:
+				urd['narration']=" / ".join(t_info)
+			unirows.append(importer_shared.UniRow(**urd))
+
+		return(unirows)
 
 	def get_transactions(self,table):
 		entries=[]
@@ -206,7 +240,7 @@ class Importer(ImporterProtocol):
 			sec_currency=self.currency
 		acct = ":".join([self.account_name, sec_account])
 		# open account with this currency
-		self.account_currency[acct]=sec_currency
+		self.account_currency[acct]=["USD",sec_currency]
 		qty = Decimal('0')
 		if len(fr.quantity)>0:
 			qty = Decimal(fr.quantity)
@@ -251,11 +285,17 @@ class Importer(ImporterProtocol):
 				if abs(qty*(tprc-prc)) > 0.0025: # exceeds tolerance
 					meta["rounding"]="Price was {0}".format(prc)
 					prc=tprc
+			if sec_account=='Cash': # KLUDGE FOR FIDO 
+				pcost = None
+				pprice = None
+			else:
+				pcost = Cost(prc,self.currency,trn_date,"")
+				pprice = Amount(prc,self.currency) 
 			postings[0]=p0._replace(
 				account = acct,
 				units=Amount(Decimal(fr.quantity),sec_currency),
-				cost = Cost(prc,self.currency,trn_date,""),
-				price = Amount(prc,self.currency),
+				cost = pcost,
+				price = pprice,
 				meta = meta,
 			)
 			aname='Cash'
@@ -298,9 +338,15 @@ class Importer(ImporterProtocol):
 				units = Amount(total_cost-commission,self.currency)
 			)
 			# interpolated posting
+			# Open account here as we need the Open to have no 
+			# currency explicity defined to pass validation
+			# the __residual__ is needed to pass validation
+			# Rem to add __residual__ to EntryPrinter.META_IGNORE
+			interp_acct = ":".join([self.account_name.replace('Assets','Income'),sec_account,"Gains"])
+			self.account_currency[interp_acct]=None
 			postings.append(
 				Posting(
-					account = self.account_name.replace('Assets','Income')+":Gains",
+					account = interp_acct,
 					units = NoneType(),
 					cost = None,
 					price = None,
@@ -389,7 +435,7 @@ class Importer(ImporterProtocol):
 			unquote = s[1:-1]
 		return unquote
 
-	def create_table(self,lines):
+	def create_table(self,filename):
 		""" Returns a list of (mostly) unparsed string tokens
 	        each item in the table is a list of tokens exactly 
 			len(fido_row_fields) long
@@ -397,6 +443,13 @@ class Importer(ImporterProtocol):
 				lines: list of raw lines from csv file
 		"""
 		table=[]
+		try:
+			with open(filename,'r') as f:
+				lines=f.readlines()
+		except:
+			sys.stderr.write("Unable to open or parse {0}".format(filename))
+			return(table)
+
 		nl=0
 		while nl < len(lines):
 			if "Brokerage" in lines[nl]:

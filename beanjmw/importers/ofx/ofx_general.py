@@ -303,7 +303,7 @@ class Importer(ImporterProtocol):
 					cost = None,
 					price = None,
 					flag = None,
-					meta=None,
+					meta={'__residual__':True}
 				)
 			)
 		elif ofx_action in ['Div','CGShort','CGLong','CGMid']:

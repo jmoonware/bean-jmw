@@ -22,6 +22,8 @@ importers.filters.assign.dir_path=path.join(path.abspath(os.curdir),"yaml")
 if not path.exists(importers.filters.assign.dir_path):
     os.makedirs(importers.filters.assign.dir_path)
 
+from beancount.parser.printer import EntryPrinter
+
 # set to True to remove duplicate entries from output
 # otherwise mark them in the meta field 'mark'
 remove_duplicates=True
@@ -125,4 +127,5 @@ if __name__=='__main__':
 		sys.stderr.write("Command line error - {0}\n".format(ex))
 		sys.exit(1)
 
+	EntryPrinter.META_IGNORE.add('__residual__')
 	scripts_utils.ingest(CONFIG, hooks=[process_extracted_entries])

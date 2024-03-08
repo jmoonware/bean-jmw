@@ -12,7 +12,8 @@ CONFIG = [
 
 csv_general.Importer("Liabilities:US:Discover:D6789",account_number="6789",csv_map=discover_csv_map),
 ofx_general.Importer("Assets:US:BofA:Checking", account_number="[0-9]+6789"),
-fido_csv.Importer("Assets:US:Fidelity:F1234"),
+fido_csv.Importer("Assets:US:Fidelity:FX1111",account_number='1111'),
+fido_csv.Importer("Assets:US:Fidelity:FZ2222",account_number='2222'),
 qif_importer.Importer("Assets:US:BofA:Checking"),
 qif_importer.Importer("Liabilities:US:Discover:D6789"),
 etrade_csv.Importer("Assets:US:Etrade:E6789"),
