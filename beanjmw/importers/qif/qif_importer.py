@@ -191,7 +191,7 @@ class Importer(ImporterProtocol):
 				entries.append(tn)
 
 		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
+		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
 		return(open_entries + entries)
 
 	def file_account(self, file):
@@ -250,7 +250,7 @@ class Importer(ImporterProtocol):
 			sec_account=symbol[0] # same as currency, except for Cash
 			acct = ":".join([account_name, sec_account])
 			# open account with this currency
-			self.account_currency[acct]=sec_currency
+			self.account_currency[acct]=["USD",sec_currency]
 		if qt.action == "Cash":
 			sec_account = "Cash"
 			sec_currency = self.currency
@@ -348,14 +348,21 @@ class Importer(ImporterProtocol):
 				account = account_name + ":Cash",
 				units = Amount(total_cost-commission,self.currency)
 			)
+			# interpolated posting
+			# Open account here as we need the Open to have no 
+			# currency explicity defined to pass validation
+			# the __residual__ is needed to pass validation
+			# Rem to add __residual__ to EntryPrinter.META_IGNORE
+			interp_acct = ":".join([self.account_name.replace('Assets','Income'),sec_account,"Gains"])
+			self.account_currency[interp_acct]=None
 			postings.append(
 				Posting(
-					account = account_name.replace('Assets','Income')+":PnL",
+					account = interp_acct,
 					units = NoneType(),
 					cost = None,
 					price = None,
 					flag = None,
-					meta=None,
+					meta={'__residual__':True},
 				)
 			)
 		elif qt.action=='BuyX':

@@ -5,6 +5,7 @@
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
+from beanjmw.importers.importer_shared import unquote
 
 import os,sys, re
 
@@ -43,7 +44,7 @@ skip_zeros=[
 default_open_date='2000-01-01'
 
 vanguard_cols = [
-'SettlementDate','TradeDate','Symbol','Description','TransactionType','Quantity','Price','Amount',
+'SettlementDate','TradeDate','Symbol','Name','TransactionType','Quantity','Price','Amount',
 ]
 
 from collections import namedtuple
@@ -54,6 +55,7 @@ class Importer(ImporterProtocol):
 		self.account_name=account_name
 		self.acct_tok=self.account_name.split(':')[-1]
 		if account_number:
+			self.acct_number = account_number
 			self.acct_tail=self.acct_number[-4:] 
 		else: # take from name
 			self.acct_tail=self.acct_tok[-4:] 
@@ -76,7 +78,7 @@ class Importer(ImporterProtocol):
 			if self.acct_tail in file.name:
 				while ln < len(head_lines):
 					toks=head_lines[ln].split(',')
-					if vanguard_cols[0] in toks[0]: # found first header
+					if vanguard_cols[0] in unquote(toks[0]): # found first header
 						found=True
 						break
 					ln+=1
@@ -84,7 +86,7 @@ class Importer(ImporterProtocol):
 		else:
 			 return False
 		
-	def extract(self, file, existing_entries=None):
+	def extract(self, file, existing_entries=None,account_number=None):
 		"""Extract transactions from a file.
         Args:
           file: A cache.FileMemo instance.
@@ -98,7 +100,7 @@ class Importer(ImporterProtocol):
 			with open(file.name,'r') as f:
 				lines=f.readlines()
 		except:
-			sys.stderr.write("Unable to open or parse {0}".format(file.name))
+			sys.stderr.write("Unable to open or parse {0}\n".format(file.name))
 			return(entries)
 		import_table=self.create_table(lines)
 		entries = self.get_transactions(import_table)
@@ -160,9 +162,9 @@ class Importer(ImporterProtocol):
 				sys.stderr.write("Skipping {0} {1} {2}\n".format(fr.TransactionType,fr.TradeDate,fr.Symbol))
 				continue
 			# filter out transactions that are to be ignored
-			if "IGNORE" in fr.Description:
+			if "IGNORE" in fr.Name:
 				continue
-			narration_str=" / ".join([fr.Description,fr.TransactionType])
+			narration_str=" / ".join([fr.Name,fr.TransactionType])
 			tn=Transaction(
 				meta=meta,
 				date=dt.date(dt.strptime(nfr.TradeDate,'%m/%d/%Y')),
@@ -370,7 +372,7 @@ class Importer(ImporterProtocol):
 
 		# make sure the columns haven't changed... 
 		is_vanguard=True
-		cols=[c.strip().replace('\'','').replace('"','') for c in lines[nl].split(',')]
+		cols=[unquote(c.strip().replace('\'','').replace('"','')) for c in lines[nl].split(',')]
 		for c,fc in zip(cols,vanguard_cols):
 			if c!=fc:
 				is_vanguard=False
@@ -381,7 +383,7 @@ class Importer(ImporterProtocol):
 	
 		# it's got the right columns, now extract the data	
 		for l in lines[nl+1:]:
-			ctoks=l.split(',')
+			ctoks=[unquote(ct) for ct in l.split(',')]
 			if len(ctoks) > 0 and len(ctoks[0])==0: # filter blank date
 				continue
 			if len(ctoks) >= len(vanguard_cols):

@@ -285,7 +285,7 @@ def update_unassigned(e, unassigned_payees):
 	for reserved in ["[Cc]heck"]:
 		if re.match(reserved,reg_key):
 			reg_key="UNASSIGNED"
-			pre_assigned_category="Expense:UNASSIGNED"
+			pre_assigned_category="Expenses:UNASSIGNED"
 	unassigned_payees[reg_key]=pre_assigned_category
 	return
 

@@ -412,8 +412,12 @@ class Importer(ImporterProtocol):
 			else:
 				sys.stderr.write("Unknown transaction amt in {0}\n".format(fr))
 				amt=Decimal('0')
+			if ofx_action=='Other':
+				aname=":".join([self.account_name,sec_account])
+			else:
+				aname=self.account_name
 			postings[0]=p0._replace(
-				account = ":".join([self.account_name, sec_account]),
+				account = aname,
 				units=Amount(amt,self.currency),
 			)
 			if (fr.memo and len(fr.memo) > 0) or (hasattr(fr, 'payee') and fr.payee and len(fr.payee)>0): # assign later
