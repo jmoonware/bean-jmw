@@ -102,7 +102,7 @@ class Importer(ImporterProtocol):
 
 		# add open directives; some may be removed in dedup
 		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
+		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
 		return(open_entries + entries)
 
 	def file_account(self, file):
@@ -172,7 +172,7 @@ class Importer(ImporterProtocol):
 			narration_str=" / ".join([fr.Description,fr.TransactionType])
 			tn=Transaction(
 				meta=meta,
-				date=dt.date(dt.strptime(nfr.TransactionDate,'%m/%d/%y')),
+				date=self.get_trn_date(nfr),
 				flag="*",
 				payee="Etrade",
 				narration=narration_str,
@@ -183,6 +183,9 @@ class Importer(ImporterProtocol):
 			entries.append(tn)
 
 		return(entries)
+
+	def get_trn_date(self,fr):
+		return(dt.date(dt.strptime(fr.TransactionDate,'%m/%d/%y')))
 
 	def generate_investment_postings(self,fr):
 		postings=[]
@@ -207,7 +210,7 @@ class Importer(ImporterProtocol):
 		sec_account=symbol
 		acct = ":".join([self.account_name, sec_account])
 		# open account with this currency
-		self.account_currency[acct]=sec_currency
+		self.account_currency[acct]=["USD",sec_currency]
 		qty = Decimal('0')
 		if len(fr.Quantity)>0:
 			qty = Decimal(fr.Quantity)
@@ -255,6 +258,7 @@ class Importer(ImporterProtocol):
 			postings[0]=p0._replace(
 				account = acct,
 				units=Amount(Decimal(fr.Quantity),sec_currency),
+				cost = Cost(prc,self.currency,self.get_trn_date(fr),""),
 				price = Amount(prc,self.currency),
 				meta = meta,
 			)
@@ -296,10 +300,12 @@ class Importer(ImporterProtocol):
 				account = self.account_name + ":Cash",
 				units = Amount(total_cost-commission,self.currency)
 			)
+			interp_acct = self.account_name.replace('Assets','Income')+":Gains"
+			self.account_currency[interp_acct]=None
 			# interpolated posting
 			postings.append(
 				Posting(
-					account = self.account_name.replace('Assets','Income')+":Gains",
+					account = interp_acct,
 #					units = NoneType(),
 					units = None,
 					cost = None,

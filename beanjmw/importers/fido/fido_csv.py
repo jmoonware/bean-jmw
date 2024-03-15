@@ -27,15 +27,27 @@ investment_actions={
 
 default_open_date='2000-01-01'
 
-# actual column names in download
-fido_cols = ['Run Date', 'Account', 'Action', 'Symbol', 'Security Description', 'Security Type', 'Quantity', 'Price ($)', 'Commission ($)', 'Fees ($)', 'Accrued Interest ($)', 'Amount ($)', 'Settlement Date']
+# Downloaded column names: Universal Names
+fido_column_map = {
+'Run Date':'date', 
+'Account':'account', 
+'Action':'action', 
+'Symbol':'symbol', 
+'Security Description':'description', 
+'Security Type':'type', 
+'Quantity':'quantity', 
+'Price ($)':'price', 
+'Commission ($)':'commission', 
+'Fees ($)':'fees', 
+'Accrued Interest ($)':'accrued_interest',
+'Amount ($)':'amount',
+'Settlement Date':'settlement_date',
+}
 
-# corresponding UniRow fields - note that any tag not in a UniRow will be unmapped (by design)
-# For example, accrued_interest is unmapped in UniRow but is a Fido column
-fido_row_fields = ['date', 'account', 'action', 'symbol', 'security_description', 'type', 'quantity', 'price', 'commission', 'fees', 'accrued_interest', 'amount', 'settlement_date']
+fido_cols = list(fido_column_map.keys())
 
 from collections import namedtuple
-FidoRow = namedtuple('FidoRow',fido_row_fields)
+FidoRow = namedtuple('FidoRow',list(fido_column_map.values()))
 
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD',account_number=None):
@@ -47,6 +59,7 @@ class Importer(ImporterProtocol):
 			self.acct_tail=account_number[-4:]
 		self.currency=currency
 		self.account_currency={} # added as discovered
+		self.default_payee = "Fido CSV"
 		super().__init__()
 
 	def identify(self, file):
@@ -85,14 +98,18 @@ class Importer(ImporterProtocol):
           A list of new, imported directives (usually mostly Transactions)
           extracted from the file.
 		"""
-#		return(importer_shared.extract(file, self))
 		import_table=self.create_table(file.name)
-		entries = self.get_transactions(import_table)
+		utr = self.map_universal_table(import_table)
+		entries = importer_shared.get_transactions(utr, self.account_name, self.default_payee, self.currency, self.account_currency)
+
+
+#		entries = self.get_transactions(import_table)
 
 		# add open directives; some may be removed in dedup
-		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
-		return(open_entries + entries)
+#		open_date=dt.date(dt.fromisoformat(default_open_date))
+#		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
+#		return(open_entries + entries)
+		return(entries)
 
 	def file_account(self, file):
 		"""Return an account associated with the given file.
@@ -157,16 +174,31 @@ class Importer(ImporterProtocol):
 		"""
 		unirows=[]
 		urow = importer_shared.UniRow()
+		# fido-specific logic to convert to universal rows
 		for tr in table:
-			urd = {}
-			for rf,val in zip(fido_row_fields,tr):
+			urd = urow._asdict()
+			for rf,val in zip(list(fido_column_map.values()),tr):
+				# check because we might have some unmapped values
 				if hasattr(urow, rf):
 					urd[rf] = val
-			map_actions(urd)
 			# give us a narration for transaction
-			t_info = [x for x in [urd['payee'],urd['memo'],urd['type']]]
-			if len(t_info) > 0 and not 'narration' in urd:
+			t_info = [x for x in [urd['payee'],urd['memo'],urd['type'],urd['action'],urd['description']] if x]
+			if len(t_info) > 0:
 				urd['narration']=" / ".join(t_info)
+			# FIDO specific: Actual date may be in action!
+			if 'action' in urd and 'as of' in urd['action']:
+				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{4}",urd['action'])
+				urd['date']=dm[0]
+			# FIDO specific: replace with datetime.date value 
+			urd['date'] = dt.date(dt.strptime(urd['date'],'%m/%d/%Y'))
+			# FIDO specific: interest income looks like this
+			if "CASH" in urd['description']: # special case
+				urd['symbol']=self.currency
+			# overwrite the "action" column value with universal action
+			self.map_actions(urd)
+			# clean up dict values
+			importer_shared.decimalify(urd)
+			# make named tuple from final dict
 			unirows.append(importer_shared.UniRow(**urd))
 
 		return(unirows)
@@ -229,13 +261,13 @@ class Importer(ImporterProtocol):
 			return(postings)
 	
 		# set defaults for two generic postings (p0, p1)
-		sec_name=fr.security_description
+		sec_name=fr.description
 		symbol=self.currency # default to this
 		if len(fr.symbol) > 0:
 			symbol = fr.symbol
 		sec_currency=symbol
 		sec_account=symbol
-		if "CASH" in fr.security_description: # special case
+		if "CASH" in fr.description: # special case
 			sec_account="Cash"
 			sec_currency=self.currency
 		acct = ":".join([self.account_name, sec_account])
@@ -438,7 +470,7 @@ class Importer(ImporterProtocol):
 	def create_table(self,filename):
 		""" Returns a list of (mostly) unparsed string tokens
 	        each item in the table is a list of tokens exactly 
-			len(fido_row_fields) long
+			len(fido_column_map) long
 			Arguments:
 				lines: list of raw lines from csv file
 		"""
@@ -464,7 +496,7 @@ class Importer(ImporterProtocol):
 				is_fido=False
 				break
 		if not is_fido or len(cols)!=len(fido_cols):
-			sys.stderr.write("Bad format {0}".format(cols))
+			sys.stderr.write("Bad format {0} (len={1}), should be {2} (len={3})".format(cols,len(cols),fido_cols,len(fido_cols)))
 			return(table)
 	
 		# it's got the right columns, now extract the data	
@@ -474,6 +506,6 @@ class Importer(ImporterProtocol):
 				if ctoks[1][len(ctoks[1])-4:]==self.acct_tail:
 					# remove double quotes
 					sctoks=[c.strip().replace('"','') for c in ctoks]
-					table.append(sctoks[:len(fido_row_fields)])
+					table.append(sctoks[:len(fido_column_map)])
 
 		return(table)

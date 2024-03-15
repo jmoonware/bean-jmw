@@ -19,7 +19,7 @@ fido_csv.Importer("Assets:US:Fidelity:FZ2222",account_number='2222'),
 qif_importer.Importer("Assets:US:Fidelity:F1234"),
 qif_importer.Importer("Assets:US:BofA:Checking"),
 qif_importer.Importer("Liabilities:US:Discover:D6789"),
-etrade_csv.Importer("Assets:US:Etrade:E6789"),
+etrade_csv.Importer("Assets:US:Etrade:E2456"),
 vanguard_csv.Importer("Assets:US:Vanguard:V9999",account_number='99999999'),
 
 ]
