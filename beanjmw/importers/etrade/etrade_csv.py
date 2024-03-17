@@ -3,6 +3,7 @@
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
+import beanjmw.importers.importer_shared as impsh
 
 import os,sys, re
 
@@ -27,6 +28,20 @@ transaction_types={
 'Wire',
 }
 
+action_map={
+'Adjustment':'Other', # at zero cost
+'Bought':'Buy',
+'Direct Debit':'Debit', 
+'Dividend':'Div', # could be LT, ST, etc.
+'Fee':'MiscExp',
+'Interest':'IntInc',
+'Other':'Other', # appear to be cancelling pairs of share sales/buys
+'Reorganization':'Merger', # mutual funds changing symbol
+'Sold':'Sell',
+'Transfer':'Xout',
+'Wire':'Xout',
+}
+
 # in the Description field, at least since 2021 
 # Does not work for previous years!
 investment_actions={
@@ -41,6 +56,19 @@ etrade_cols = [
 'TransactionDate','TransactionType','SecurityType','Symbol','Quantity','Amount','Price','Commission','Description',
 ]
 
+# map to universal row
+etrade_map_cols = {
+'TransactionDate':'date',
+'TransactionType':'action',
+'SecurityType':'type',
+'Symbol':'symbol',
+'Quantity':'quantity',
+'Amount':'amount',
+'Price':'price',
+'Commission':'commission',
+'Description':'description',
+}
+
 from collections import namedtuple
 EtradeRow = namedtuple('EtradeRow',etrade_cols)
 
@@ -54,6 +82,7 @@ class Importer(ImporterProtocol):
 			self.acct_tail=account_number[-4:]
 		self.currency=currency
 		self.account_currency={} # added as discovered
+		self.default_payee="Etrade CSV"
 		super().__init__()
 
 	def identify(self, file):
@@ -90,14 +119,21 @@ class Importer(ImporterProtocol):
           A list of new, imported directives (usually mostly Transactions)
           extracted from the file.
 		"""
-		entries=[]
 		try:
 			with open(file.name,'r') as f:
 				lines=f.readlines()
 		except:
 			sys.stderr.write("Unable to open or parse {0}".format(file.name))
-			return(entries)
+			return([])
+		# read Etrade-specific format
 		import_table=self.create_table(lines)
+
+		# map to universal rows
+		transactions = self.map_universal_transactions(import_table)
+		# turn into Beancount transactions
+		entries = impsh.get_transactions(transactions, self.account_name, self.default_payee, self.currency, self.account_currency)
+		return(entries)
+		
 		entries = self.get_transactions(import_table)
 
 		# add open directives; some may be removed in dedup
@@ -142,6 +178,56 @@ class Importer(ImporterProtocol):
           default.)
 		"""
 		return
+
+	def map_actions(self,urd):
+		if urd['action'] in action_map:
+			urd['action']=action_map[urd['action']]
+		else: # unsure what we should do here so warn
+			sys.stderr.write("map_actions: Unknown inv action: {0} in {1}\n".format(urd['action'],urd))
+		# special Etrade logic: two records for dividends
+		# First has a zero-quantity marked as REINV, LT, or ST Cap Gain
+		# (although the marking in description is only since 2021 I think)
+		# Second is the (possible) actual buying of the security
+		if urd['action']=='Div':
+			if urd['quantity']!=0:
+				urd['action']='Buy' # reinvesting of Div, CGLong or CGShort
+				# Etrade supplies 0 as the price! Need to recalculate
+				urd['price']=abs(round(urd['amount']/urd['quantity'],2))
+			else: # zero quantity cash increase
+				for key in investment_actions:
+					if key in urd['description']:
+						urd['action']=investment_actions[key]	
+			
+		return
+
+	def map_universal_transactions(self,rows):
+		""" Map raw rows to universal rows, Etrade specific
+			Args:
+				rows: rows from loaded table
+
+			Returns: a list of universal rows
+		"""
+
+		uentries = []
+
+		unir = impsh.UniRow()
+		for row in rows:
+			urd = unir._asdict()
+			for key,colval in zip(etrade_map_cols.values(),row):
+				if key in urd:
+					urd[key]=colval
+
+			# Etrade specific date
+			urd['date']=dt.date(dt.strptime(urd['date'],'%m/%d/%y'))
+			impsh.build_narration(urd)
+			#  make sure we have a sensible symbol
+			if len(urd['symbol']) == 0 or '#' in urd['symbol']:
+				urd['symbol']=self.currency 
+			impsh.decimalify(urd)
+			self.map_actions(urd)
+			uentries.append(impsh.UniRow(**urd))
+
+		return(uentries)
 
 	def get_transactions(self,table):
 		entries=[]

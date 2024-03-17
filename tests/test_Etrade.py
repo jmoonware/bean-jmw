@@ -6,9 +6,9 @@ t_examples=['etrade.csv']
 t_accounts=['Assets:US:Etrade:E2456']
 t_acct_nums=['2456']
 # number of validation errors in non-processed entries
-t_errs=[38] 
+t_errs=[22] 
 t_imp = [etrade_csv]
-acct_filter="Etrade"
+acct_filter="Etrade:E2456"
 output_name="old_etrade.bc"
 
 def test_ImportCsv():

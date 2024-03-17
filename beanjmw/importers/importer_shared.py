@@ -51,6 +51,8 @@ def get_transactions(transactions,account_name,default_payee,currency,account_cu
 	'''
 	entries=[]
 	for unir in transactions:
+		if "IGNORE" in unir.description:
+			continue
 		meta=new_metadata(account_name, 0)
 		tn=Transaction(
 			meta=meta,
@@ -94,6 +96,13 @@ def decimalify(urd):
 	for att,sf in zip(convert_names,sfig):
 		if urd[att] and len(urd[att]) > 0:
 			urd[att] = round(Decimal(urd[att]),sf)
+	return
+
+def build_narration(urd):
+	# give us a narration for transaction
+	t_info = [x for x in [urd['payee'],urd['memo'],urd['type'],urd['action'],urd['description']] if x]
+	if len(t_info) > 0:
+		urd['narration']=" / ".join(t_info)
 	return
 
 def fix_rounding(rec,acct):
@@ -275,7 +284,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 			account = account_name + ":Cash",
 			units = Amount(amt,currency)
 		)
-	elif uni.action in ['XIin','XOut']: 
+	elif uni.action in ['Xin','Xout']: 
 		postings[0]=p0._replace(
 			account = ":".join([account_name,"Cash"]),
 			units=Amount(amt,currency)
@@ -333,7 +342,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 				units = Amount(-amt,currency)
 			)
 	else:
-		sys.stderr.write("Unknown investment action {0}\n".format(uni.action))
+		sys.stderr.write("Unknown investment action {0}\n".format(uni))
 
 	return(postings)
 

@@ -19,8 +19,8 @@ investment_actions={
 'DIVIDEND RECEIVED':'Div',
 'INTEREST':'IntInc',
 'REINVESTMENT':'Buy',
-'ELECTRONIC FUNDS TRANSFER':'XOut',
-'DIRECT DEBIT':'XOut',
+'ELECTRONIC FUNDS TRANSFER':'Xout',
+'DIRECT DEBIT':'Xout',
 'MERGER ':'Merger',
 'DISTRIBUTION':'ShrsIn',
 }
@@ -182,9 +182,7 @@ class Importer(ImporterProtocol):
 				if hasattr(urow, rf):
 					urd[rf] = val
 			# give us a narration for transaction
-			t_info = [x for x in [urd['payee'],urd['memo'],urd['type'],urd['action'],urd['description']] if x]
-			if len(t_info) > 0:
-				urd['narration']=" / ".join(t_info)
+			importer_shared.build_narration(urd)
 			# FIDO specific: Actual date may be in action!
 			if 'action' in urd and 'as of' in urd['action']:
 				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{4}",urd['action'])
@@ -413,7 +411,7 @@ class Importer(ImporterProtocol):
 				account = self.account_name + ":Cash",
 				units = Amount(Decimal(fr.amount),self.currency)
 			)
-		elif fido_action in ['XIin','XOut']: 
+		elif fido_action in ['Xin','Xout']: 
 			postings[0]=p0._replace(
 				account = ":".join([self.account_name,"Cash"]),
 				units=Amount(Decimal(fr.amount),self.currency)
