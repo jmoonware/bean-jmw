@@ -3,6 +3,7 @@
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType, Balance
 from beancount.core.number import MISSING
+import beanjmw.importers.importer_shared as impsh
 
 # ofxparse uses either Transactions or InvestmentTransactions
 # Transactions are simple debit/credit
@@ -95,23 +96,28 @@ class Importer(ImporterProtocol):
 		
 		# set up securities list if needed
 		if hasattr(ofx, 'security_list'):
-			self.account_currency[":".join([self.account_name,'Cash'])]=self.currency
+			self.account_currency[":".join([self.account_name,'Cash'])]=[self.currency]
 			for s in ofx.security_list:
 				if s.ticker and len(s.ticker) > 0:
 					ticker=s.ticker
 				else: # no ticker - happens with some accounts
 					ticker=s.name.replace(' ','')[:20].upper()
-				self.account_currency[':'.join([self.account_name,ticker])]=ticker
+				self.account_currency[':'.join([self.account_name,ticker])]=['USD',ticker]
 				self.security_ids[s.uniqueid]=ticker
+		else: # open a cash account
+			self.account_currency[self.account_name]=[self.currency]
 		for ofx_acct in ofx.accounts:
 			if ofx_acct.account_id[-4:]==self.acct_tail:
-				entries = self.get_transactions(ofx_acct.statement.transactions)
+				unrs = self.map_universal_table(ofx_acct.statement.transactions)
+				entries = impsh.get_transactions(unrs, self.account_name, self.default_payee, self.currency, self.account_currency)
+#				entries = self.get_transactions(ofx_acct.statement.transactions)
 				balances = self.get_balances(ofx_acct.statement)
 
 		# add open directives; some may be removed in dedup
-		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
-		return(open_entries + entries + balances)
+#		open_date=dt.date(dt.fromisoformat(default_open_date))
+#		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
+#		return(open_entries + entries + balances)
+		return(entries + balances)
 
 	def get_balances(self,stmt):
 		""" Creates balance statements from OFX balances or positions
@@ -188,6 +194,52 @@ class Importer(ImporterProtocol):
 			# FIXME: when use tradeDate vs. settleDate?
 			trn_date=fr.tradeDate
 		return(trn_date)
+
+	def map_universal_table(self,transactions):
+		unirows=[]
+		# look at ofx record attributes rather than a cartesion table	
+		for ofxr in transactions:
+			urd = impsh.UniRow()._asdict()
+			if hasattr(ofxr, 'security'):
+				urd['symbol']=self.security_ids[ofxr.security]
+			if hasattr(ofxr, 'unit_price'):
+				urd['price']=ofxr.unit_price
+			if hasattr(ofxr, 'units'):
+				urd['quantity']=ofxr.units
+			if hasattr(ofxr, 'total'):
+				urd['total']=ofxr.total
+			if hasattr(ofxr, 'fees'):
+				urd['fees']=ofxr.fees
+			if hasattr(ofxr, 'commission'):
+				urd['commission']=ofxr.commission
+			if hasattr(ofxr, 'amount'):
+				urd['amount']=ofxr.amount	
+			if hasattr(ofxr, 'payee'):
+				urd['payee'] = ofxr.payee
+				narration_str=" / ".join([ofxr.payee, ofxr.memo,ofxr.type])
+			else:
+				narration_str=" / ".join([ofxr.memo,ofxr.type])
+			urd['narration']=narration_str
+			# TODO: Do we need a copy of memo?
+			urd['memo']=ofxr.memo
+			urd['description']=ofxr.memo
+			urd['type']=ofxr.type
+			trn_date = self.get_trn_date(ofxr)
+			if not trn_date:
+				sys.stderr.write("Unknown date for transaction {0}\n".format(ofxr))
+				continue
+			urd['date']=dt.date(trn_date)
+			# action map is simple for ofx
+			if ofxr.type in investment_actions:
+				urd['action']=investment_actions[ofxr.type]
+			# KLUDGE to deal with Etrade...
+			if "DIV" in ofxr.memo and ofxr.type=='income':
+				urd['action']="Div"
+			if "INTEREST" in ofxr.memo and ofxr.type=='other':
+				urd['action']="IntInc"
+			unirows.append(impsh.UniRow(**urd))
+
+		return(unirows)
 
 	def get_transactions(self,transactions):
 		entries=[]

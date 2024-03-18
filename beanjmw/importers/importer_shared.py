@@ -80,6 +80,14 @@ def unquote(s):
 		unqs = unqs[1:-1]
 	return unqs
 
+def map_to_dict(columns,tr):
+	urd = UniRow()._asdict()
+	for key,val in zip(columns,tr):
+		# check because we might have some unmapped values
+		if key in urd:
+			urd[key] = val
+	return(urd)
+	
 
 default_open_date='2000-01-01'
 
@@ -117,7 +125,7 @@ def fix_rounding(rec,acct):
 	elif rec.amount and rec.amount != 0:
 		amt = rec.amount + Decimal('0.00')
 	qty=Decimal(0)
-	if rec.quantity != 0:
+	if rec.quantity and rec.quantity != 0:
 		qty=rec.quantity
 	prc=Decimal(0)
 	if rec.price and rec.price > 0 and qty != 0:
@@ -151,7 +159,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	acct = ":".join([account_name, sec_account])
 	account_currency[acct]=["USD",sec_currency]
 	meta, amt, qty, prc = fix_rounding(uni,acct)
-	if uni.action in ["Debit","Credit"]:
+	if uni.action in ["Debit","Credit"]: # ,"Other"]:
 		acct_tail = ""
 	else:
 		acct_tail = ":Cash"
@@ -330,11 +338,11 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	# Single-leg this for non-investment accounts
 	elif uni.action in ['Debit','Credit','Other']:
 		postings[0]=p0._replace(
-			account = ":".join([account_name, sec_account]),
+			account = account_name+acct_tail,
 			units=Amount(amt,currency),
 		)
 		# assign later if we can
-		if has_chrs(uni.memo) or has_chrs(uni.payee) or has_chrs(uni.narration): 
+		if has_chrs(uni.memo) or has_chrs(uni.payee) or has_chrs(uni.description): 
 			postings.remove(p1)
 		else: # can't be assigned - have it come from Transfer
 			postings[1]=p1._replace(

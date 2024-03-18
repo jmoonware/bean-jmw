@@ -173,14 +173,9 @@ class Importer(ImporterProtocol):
 			list of UniRow records, mapped from input table
 		"""
 		unirows=[]
-		urow = importer_shared.UniRow()
 		# fido-specific logic to convert to universal rows
 		for tr in table:
-			urd = urow._asdict()
-			for rf,val in zip(list(fido_column_map.values()),tr):
-				# check because we might have some unmapped values
-				if hasattr(urow, rf):
-					urd[rf] = val
+			urd = importer_shared.map_to_dict(fido_column_map.values(), tr)
 			# give us a narration for transaction
 			importer_shared.build_narration(urd)
 			# FIDO specific: Actual date may be in action!

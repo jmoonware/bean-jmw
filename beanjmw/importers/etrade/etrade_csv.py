@@ -197,7 +197,6 @@ class Importer(ImporterProtocol):
 				for key in investment_actions:
 					if key in urd['description']:
 						urd['action']=investment_actions[key]	
-			
 		return
 
 	def map_universal_transactions(self,rows):
@@ -210,13 +209,8 @@ class Importer(ImporterProtocol):
 
 		uentries = []
 
-		unir = impsh.UniRow()
 		for row in rows:
-			urd = unir._asdict()
-			for key,colval in zip(etrade_map_cols.values(),row):
-				if key in urd:
-					urd[key]=colval
-
+			urd = impsh.map_to_dict(etrade_map_cols.values(), row)
 			# Etrade specific date
 			urd['date']=dt.date(dt.strptime(urd['date'],'%m/%d/%y'))
 			impsh.build_narration(urd)
