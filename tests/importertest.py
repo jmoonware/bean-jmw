@@ -63,7 +63,8 @@ def converttest(t_examples,t_accounts,t_acct_nums,t_errs,t_imp,acct_filter,outpu
 	for (fn,entries) in proc_assign_ent:
 		all_entries.extend(entries)
 	# opens must precede transactions for HARDCORE_VALIDATIONS
-	all_entries.sort(key=lambda e:str(type(e)))
+	# balance statments must come after opens
+	all_entries.sort(key=lambda e:str(type(e)).replace("Balance", "Z"))
 	valid_errors = validation.validate(all_entries,options.OPTIONS_DEFAULTS,None,validation.HARDCORE_VALIDATIONS)
 	# should have no errors here
 	[print("=== " + e.message) for e in valid_errors]

@@ -4,7 +4,7 @@ from importertest import converttest
 t_examples=['test1.qfx']
 t_accounts=['Assets:US:BofA:Checking']
 t_acct_nums=['6789']
-t_errs=[32]
+t_errs=[33]
 t_imp = [ofx_general]
 acct_filter="BofA:Checking"
 output_name = "old_ofx.bc"

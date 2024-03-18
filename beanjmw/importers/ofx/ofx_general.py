@@ -1,7 +1,7 @@
 # custom importer to load generic OFX/QFX format using ofxparse
 
 from beancount.ingest.importer import ImporterProtocol
-from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
+from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType, Balance
 from beancount.core.number import MISSING
 
 # ofxparse uses either Transactions or InvestmentTransactions
@@ -85,6 +85,7 @@ class Importer(ImporterProtocol):
           extracted from the file.
 		"""
 		entries=[]
+		balances=[]
 		try:
 			with open(file.name,'r') as f:
 				ofx=OfxParser.parse(f)
@@ -105,11 +106,41 @@ class Importer(ImporterProtocol):
 		for ofx_acct in ofx.accounts:
 			if ofx_acct.account_id[-4:]==self.acct_tail:
 				entries = self.get_transactions(ofx_acct.statement.transactions)
+				balances = self.get_balances(ofx_acct.statement)
 
 		# add open directives; some may be removed in dedup
 		open_date=dt.date(dt.fromisoformat(default_open_date))
 		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
-		return(open_entries + entries)
+		return(open_entries + entries + balances)
+
+	def get_balances(self,stmt):
+		""" Creates balance statements from OFX balances or positions
+			Args: stmt = OFX statement
+		"""
+		balances=[]
+		if hasattr(stmt, 'balance'): # Credit/Debit account
+			nbal = Balance(
+				meta=new_metadata("OFXFile", 0),
+				date = dt.date(stmt.balance_date),
+				account = self.account_name,
+				amount = Amount(stmt.balance,stmt.currency.upper()),
+				tolerance = None,
+				diff_amount = None,
+			)
+			balances.append(nbal)
+		elif hasattr(stmt, 'positions'): # investment account
+			for p in stmt.positions:
+				nbal = Balance(
+					meta=new_metadata("OFXFile", 0),
+					date = dt.date(p.date),
+					account = ":".join([self.account_name,self.security_ids[p.security]]),
+					amount = Amount(p.units,self.security_ids[p.security]),
+					tolerance = None,
+					diff_amount = None,
+				)
+				balances.append(nbal)
+		return(balances)
+
 
 	def file_account(self, file):
 		"""Return an account associated with the given file.
