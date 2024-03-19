@@ -5,6 +5,8 @@ from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
 
+import beanjmw.importers.importer_shared as impsh
+
 import os,sys
 
 from qifparse.parser import QifParser
@@ -21,6 +23,32 @@ qif_investment_actions=[
 'Buy', 'BuyX', 'Sell',  'SellX', 'CGLong', 'CGLongX', 'CGMid', 'CGMidX', 'CGShort', 'CGShortX', 'Div', 'DivX', 'IntInc', 'IntIncX', 'ReinvDiv', 'ReinvInt', 'ReinvLg', 'ReinvMd', 'ReinvSh', 'Reprice', 'XIn', 'XOut', 'MiscExp', 'MiscExpX', 'MiscInc', 'MiscIncX', 'MargInt', 'MargIntX', 'RtrnCap', 'RtrnCapX', 'StkSplit', 'ShrsOut', 'ShrsIn', 'Cash',
 ]
 
+# map to universal
+qif_action_map={
+'Buy':'Buy', 'BuyX':'Buy', 'Sell':'Sell',  'SellX':'Sell', 
+'CGLong':'CGLong', 'CGLongX':'CGLong', 
+'CGMid':'CGShort', 'CGMidX':'CGShort', 
+'CGShort':'CGShort', 'CGShortX':'CGShort', 
+'Div':'Div', 'DivX':'Div', 'IntInc':'IntInc', 
+'IntIncX':'IntInc', 'ReinvDiv':'ReinvDiv', 
+'ReinvInt':'ReinvDiv', 'ReinvLg':'ReinvDiv', 
+'ReinvMd':'ReinvDiv', 'ReinvSh':'ReinvDiv', 
+'Reprice':'Reprice', 'XIn':'Xin', 'XOut':'Xout', 
+'MiscExp':'MiscExp', 'MiscExpX':'MiscExp', 
+'MiscInc':'MiscInc', 'MiscIncX':'MiscInc', 
+'MargInt':'MiscInc', 'MargIntX':'MiscInc', 
+'RtrnCap':'Other', 'RtrnCapX':'Other', 
+'StkSplit':'StkSplit', 'ShrsOut':'ShrsOut', 
+'ShrsIn':'ShrsIn', 'Cash':'Cash',
+}
+
+map_reinv = {
+	'ReinvDiv':'Div',
+	'ReinvLg':'CGLong',
+	'ReinvMd':'CGShort',
+	'ReinvSh':'CGShort',
+} 
+
 default_open_date='2000-01-01'
 
 class Importer(ImporterProtocol):
@@ -30,6 +58,7 @@ class Importer(ImporterProtocol):
 		# TODO: use account number
 		self.account_number=account_number
 		self.account_currency={} # added as discovered
+		self.default_payee="QIF Transaction"
 		super().__init__()
 
 	def identify(self, file):
@@ -103,6 +132,43 @@ class Importer(ImporterProtocol):
 		)
 		return(tn)
 
+	def map_to_unirow(self,urd,payee_str,memo_str,num_str,category):
+		if num_str:
+			num_str=num_str.strip()
+		else:
+			num_str=""
+		if category:
+			# remove invalid chars, capitalize
+			clean_category=category
+			for c in quicken_category_remove:
+				clean_category= clean_category.replace(c,"")
+			cat_toks=clean_category.split(":")
+			cap_cats=[]
+			for ct in cat_toks: # Capitalize First LetterInWords
+				cap_cats.append(ct[0].upper()+ct[1:]) 
+			urd['category']=":".join(cap_cats)
+		if len(num_str) > 0:
+			num_str=" "+num_str
+		check_str=""
+		if payee_str:
+			payee_str=payee_str.strip().replace('/','.')
+			if "CHECK" in payee_str.upper():
+				check_str="Check"
+		else:
+			payee_str=""
+		n_toks=[payee_str,memo_str,check_str+num_str]
+		 # truly blank
+		if len(''.join(n_toks))==0 and not urd['category']:
+			n_toks[0]='EMPTY' # for assigning later
+		narration_str=" / ".join(n_toks)
+		
+		# update dict with values
+		urd['payee']=payee_str
+		urd['narration']=narration_str
+
+		return
+
+
 	def is_split_check(self,qt):
 		ret=False
 		if qt.payee and "CHECK" in qt.payee.upper():
@@ -133,66 +199,126 @@ class Importer(ImporterProtocol):
 			sys.stderr.write("Unable to open or parse {0}".format(file.name))
 			return(entries)
 		securities=qif.get_securities() # may be in qif export
-		for tno, qt in enumerate(qif.get_transactions(True)[0]):
-			meta=new_metadata(file.name, tno)
+		self.security_list=qif.get_securities() # may be in qif export
+		uentries = self.map_universal_table(qif.get_transactions(True)[0])
+		entries = impsh.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency) 
+		# legacy
+#		for tno, qt in enumerate(qif.get_transactions(True)[0]):
+#			meta=new_metadata(file.name, tno)
+#			if type(qt)==QifTransaction:
+#				# Special case: Used to record split checks for paying
+#				# credit cards - turn each split into a transaction
+#				# and mangle check number so payee isn't assigned from file
+#				if self.is_split_check(qt):
+#					for st in qt.splits:
+#						# need a new meta for each split entry
+#						meta=new_metadata(file.name, tno)
+#						payee_str="SPLIT "
+#						if st.memo:
+#							payee_str = payee_str + st.memo
+#						if st.category:
+#							payee_str = payee_str + " " + st.category
+#						entries.append(
+#							self.create_transaction(
+#								qt.date,
+#								st.amount,
+#								payee_str,
+#								self.clean_str(st.memo),
+#								"S"+self.clean_str(qt.num), # won't be interp as check later
+#								st.category,
+#								meta
+#							)
+#						)
+#				else:
+#					entries.append(
+#						self.create_transaction(
+#							qt.date,
+#							qt.amount,
+#							qt.payee,
+#							self.clean_str(qt.memo),
+#							qt.num,
+#							qt.category,
+#							meta
+#						)
+#					)
+#			elif type(qt)==QifInvestment:
+#				act_str=self.clean_str(qt.action)
+#				n_toks=[self.clean_str(qt.memo),act_str]
+#				 # truly blank
+#				if len(''.join(n_toks))==0 and not 'category' in meta:
+#					n_toks[0]='EMPTY' # for assigning later
+#				narration_str=" / ".join(n_toks)
+#				tn=Transaction(
+#					meta=meta,
+#					date=dt.date(qt.date),
+#					flag="*",
+#					payee="Investment from QIF",
+#					narration=narration_str,
+#					tags=EMPTY_SET,
+#					links=EMPTY_SET,
+#					postings=self.generate_investment_postings(qt, self.account_name, securities),
+#				)
+#				entries.append(tn)
+#
+#		open_date=dt.date(dt.fromisoformat(default_open_date))
+#		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
+		return(entries)
+
+	def map_universal_table(self,transactions):
+		uentries = []
+		for qt in transactions: # qif transactions
+			urd = impsh.UniRow()._asdict()
 			if type(qt)==QifTransaction:
 				# Special case: Used to record split checks for paying
 				# credit cards - turn each split into a transaction
 				# and mangle check number so payee isn't assigned from file
 				if self.is_split_check(qt):
 					for st in qt.splits:
-						# need a new meta for each split entry
-						meta=new_metadata(file.name, tno)
+						urd = impsh.UniRow()._asdict()
 						payee_str="SPLIT "
 						if st.memo:
 							payee_str = payee_str + st.memo
 						if st.category:
 							payee_str = payee_str + " " + st.category
-						entries.append(
-							self.create_transaction(
-								qt.date,
-								st.amount,
-								payee_str,
-								self.clean_str(st.memo),
-								"S"+self.clean_str(qt.num), # won't be interp as check later
-								st.category,
-								meta
-							)
-						)
+						self.map_to_unirow(urd, payee_str, self.clean_str(st.memo), "S"+self.clean_str(qt.num), st.category)
+						urd['amount']=st.amount
+						urd['action']='Debit'
+						urd['date']=dt.date(qt.date)
+						impsh.decimalify(urd)
+						uentries.append(impsh.UniRow(**urd))
 				else:
-					entries.append(
-						self.create_transaction(
-							qt.date,
-							qt.amount,
-							qt.payee,
-							self.clean_str(qt.memo),
-							qt.num,
-							qt.category,
-							meta
-						)
-					)
+					self.map_to_unirow(urd, qt.payee, self.clean_str(qt.memo), qt.num, qt.category)
+					urd['amount']=qt.amount
+					urd['action']='Debit'
+					urd['date']=dt.date(qt.date)
+					impsh.decimalify(urd)
+					uentries.append(impsh.UniRow(**urd))
 			elif type(qt)==QifInvestment:
 				act_str=self.clean_str(qt.action)
 				n_toks=[self.clean_str(qt.memo),act_str]
 				 # truly blank
 				if len(''.join(n_toks))==0 and not 'category' in meta:
 					n_toks[0]='EMPTY' # for assigning later
-				narration_str=" / ".join(n_toks)
-				tn=Transaction(
-					meta=meta,
-					date=dt.date(qt.date),
-					flag="*",
-					payee="Investment from QIF",
-					narration=narration_str,
-					tags=EMPTY_SET,
-					links=EMPTY_SET,
-					postings=self.generate_investment_postings(qt, self.account_name, securities),
-				)
-				entries.append(tn)
+				urd['payee']="Investment from QIF"
+				urd['memo']=self.clean_str(qt.memo)
+				urd['narration']=" / ".join(n_toks)
+				urd['category']=qt.category
+				urd['amount']=qt.amount
+				urd['date']=dt.date(qt.date)
+				if act_str in qif_action_map:
+					urd['action']= qif_action_map[act_str]
+				else:
+					sys.stderr.write("QIF Unknown action {0}\n".format(act_str))
+				urd['quantity']=qt.quantity
+				urd['price']=qt.price
+				urd['description']=qt.security
+				symbol = [s.symbol for s in self.security_list if s.name and s.name == qt.security]
+				if len(symbol) > 0 and symbol[0]:
+					urd['symbol']=symbol[0]
+				impsh.decimalify(urd)
+				uentries.append(impsh.UniRow(**urd))
 
-		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
-		return(open_entries + entries)
+		return(uentries)	
 
 	def file_account(self, file):
 		"""Return an account associated with the given file.

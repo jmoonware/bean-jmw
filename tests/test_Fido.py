@@ -8,7 +8,7 @@ t_examples=['fidelity.csv','fidelity.csv','test2.qif']
 t_accounts=['Assets:US:Fidelity:FX1111','Assets:US:Fidelity:FZ2222','Assets:US:Fidelity:F1234']
 t_acct_nums=['1111','2222','1234']
 # number of validation errors in non-processed entries
-t_errs=[12,30,16] 
+t_errs=[12,30,7] 
 t_imp = [fido_csv,fido_csv,qif_importer]
 acct_filter="Fidelity"
 output_name='old_fido_test.bc'

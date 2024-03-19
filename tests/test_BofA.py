@@ -8,7 +8,7 @@ t_examples=['test1.qfx','test1.qif','test3.qif']
 t_accounts=['Assets:US:BofA:Checking','Assets:US:BofA:Checking','Assets:US:BofA:Checking']
 t_acct_nums=['6789','6789','6789']
 # number of validation errors in non-processed entries
-t_errs=[16,39,24] 
+t_errs=[16,40,24] 
 t_imp = [ofx_general, qif_importer, qif_importer]
 acct_filter="BofA:Checking"
 output_name='old_bofa_test.bc'

@@ -51,7 +51,7 @@ def get_transactions(transactions,account_name,default_payee,currency,account_cu
 	'''
 	entries=[]
 	for unir in transactions:
-		if "IGNORE" in unir.description:
+		if unir.description and "IGNORE" in unir.description:
 			continue
 		meta=new_metadata(account_name, 0)
 		tn=Transaction(
@@ -102,7 +102,7 @@ def decimalify(urd):
 	convert_names = ['amount','quantity','price','commission','fees','total']
 	sfig = [2,4,2,2,2,2]
 	for att,sf in zip(convert_names,sfig):
-		if urd[att] and len(urd[att]) > 0:
+		if urd[att] and type(urd[att])==str and len(urd[att]) > 0:
 			urd[att] = round(Decimal(urd[att]),sf)
 	return
 
@@ -205,13 +205,13 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 		)
 		aname='Cash'
 		# shares in came from a share exchange somewhere else
-		if uni.action == 'ShrsIn': # KLUDGE
+		if uni.action == 'ShrsIn' and "TRANSFER" in uni.narration.upper(): 
 			aname = 'Transfer'
 		postings[1]=p1._replace(
 			account = ":".join([account_name,aname]),
 			units = Amount(-abs(amt),currency)
 		)
-	elif uni.action=='Sell': 
+	elif uni.action in ['Sell','ShrsOut']: 
 		commission=Decimal(0)
 		if uni.commission:
 			commission=uni.commission
@@ -227,13 +227,16 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 			)
 		postings[0]=p0._replace(
 			account = ":".join([account_name, sec_account]),
-			units=Amount(qty,sec_currency),
+			units=Amount(-abs(qty),sec_currency),
 			# let Beancount booking rules take care of cost
 			cost=Cost(None,None,None,None),
 			price = Amount(prc,currency),
 		)
+		tail=":Cash"
+		if uni.action=='ShrsOut' and "TRANSFER" in uni.narration.upper():
+			tail=":Transfer"
 		postings[1]=p1._replace(
-			account = account_name + ":Cash",
+			account = account_name + tail,
 			units = Amount(amt-commission,currency)
 		)
 		# interpolated posting
@@ -256,7 +259,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	elif uni.action in ['Div','CGShort','CGLong','CGMid']:
 		postings[0]=p0._replace(
 			account = ":".join([account_name.replace('Assets','Income'),sec_account,uni.action]),
-			units=Amount(-amt,currency)
+			units=Amount(-abs(amt),currency)
 		)
 		postings[1]=p1._replace(
 			account = account_name + ":Cash",
@@ -265,7 +268,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	elif uni.action in ['ReinvDiv']:
 		postings[0]=p0._replace(
 			account = ":".join([account_name.replace('Assets','Income'),sec_account,"Div"]),
-			units=Amount(amt,currency)
+			units=Amount(-abs(amt),currency)
 		)
 		postings[1]=p1._replace(
 			account = ':'.join([account_name,sec_account]),
@@ -277,11 +280,11 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	elif uni.action in ['IntInc','MiscInc']:
 		postings[0]=p0._replace(
 			account = ":".join([account_name.replace('Assets','Income'),uni.action]),
-			units=Amount(-amt,currency)
+			units=Amount(-abs(amt),currency)
 		)
 		postings[1]=p1._replace(
 			account = account_name + ":Cash",
-			units = Amount(amt,currency)
+			units = Amount(abs(amt),currency)
 		)
 	elif uni.action in ['MiscExp']:
 		postings[0]=p0._replace(
@@ -320,7 +323,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	elif uni.action=='StkSplit': 
 		sys.stderr.write("StkSplit not implemented\n")
 		pass
-	# just remove shares - manually fix where they go later!
+	# just sell shares - manually fix where they go later!
 	# looks like sale for transfer between e.g. share classes 
 	elif uni.action=='ShrsOut': 
 		# FIXME
@@ -336,7 +339,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 		)
 	# case of cash OfxTransaction
 	# Single-leg this for non-investment accounts
-	elif uni.action in ['Debit','Credit','Other']:
+	elif uni.action in ['Debit','Credit','Other','Cash']:
 		postings[0]=p0._replace(
 			account = account_name+acct_tail,
 			units=Amount(amt,currency),

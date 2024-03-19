@@ -33,7 +33,7 @@ def converttest(t_examples,t_accounts,t_acct_nums,t_errs,t_imp,acct_filter,outpu
 		file_entries.append((fn,importer.extract(fc)))
 		assert len(file_entries)==init_len+1,"Did not add file {0}".format(fn)
 	for (fn,entries),en in zip(file_entries,t_errs):
-		[print(format_entry(e)) for e in entries]
+#		[print(format_entry(e)) for e in entries]
 		valid_errors = validation.validate(entries,options.OPTIONS_DEFAULTS,None,validation.HARDCORE_VALIDATIONS)
 		print("*** Errors")
 		[print("*** " + e.message) for e in valid_errors]
