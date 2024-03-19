@@ -1,11 +1,13 @@
 # custom importer to load Vanguard CSV brokerage account history
 # This uses files scraped from the PDF reports (with some hand-editing)
-# is isn't really useful as a general Vanguard importer (use the ofx files) 
+# This isn't really useful as a general Vanguard importer (use the ofx files) 
 
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
 from beanjmw.importers.importer_shared import unquote
+
+import beanjmw.importers.importer_shared as impsh
 
 import os,sys, re
 
@@ -14,17 +16,17 @@ from datetime import datetime as dt
 # remove these chars as Beancount accounts can't have them
 quicken_category_remove=[' ','\'','&','-','+','.']
 
-transaction_types={
-'Buy',
-'Dividend',
-'Conversion',
-'Reinvestment',
-'Transfer (incoming)',
-'Transfer',
-'Capital gain (LT)',
-'Capital gain (ST)',
-'Reinvestment (LT gain)',
-'Reinvestment (ST gain)',
+action_map={
+'Buy':'Buy',
+'Dividend':'ReinvDiv',
+'Conversion':'Merger',
+'Reinvestment':'ReinvDiv',
+'Transfer (incoming)':'Transfer',
+'Transfer':'Transfer',
+'Capital gain (LT)':'CGLong',
+'Capital gain (ST)':'CGShort',
+'Reinvestment (LT gain)':'ReinvLg',
+'Reinvestment (ST gain)':'ReinvSh'
 }
 
 transaction_acct={
@@ -47,6 +49,17 @@ vanguard_cols = [
 'SettlementDate','TradeDate','Symbol','Name','TransactionType','Quantity','Price','Amount',
 ]
 
+vanguard_map = {
+'SettlementDate':'settlementDate',
+'TradeDate':'date',
+'Symbol':'symbol',
+'Name':'description',
+'TransactionType':'type',
+'Quantity':'quantity',
+'Price':'price',
+'Amount':'amount',
+}
+
 from collections import namedtuple
 VanguardRow = namedtuple('VanguardRow',vanguard_cols)
 
@@ -61,6 +74,7 @@ class Importer(ImporterProtocol):
 			self.acct_tail=self.acct_tok[-4:] 
 		self.currency=currency
 		self.account_currency={} # added as discovered
+		self.default_payee="Vanguard CSV"
 		super().__init__()
 
 	def identify(self, file):
@@ -103,12 +117,16 @@ class Importer(ImporterProtocol):
 			sys.stderr.write("Unable to open or parse {0}\n".format(file.name))
 			return(entries)
 		import_table=self.create_table(lines)
-		entries = self.get_transactions(import_table)
+		uentries = self.map_universal_table(import_table)
+		entries = impsh.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency)
+
+#		entries = self.get_transactions(import_table)
 
 		# add open directives; some may be removed in dedup
-		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
-		return(open_entries + entries)
+#		open_date=dt.date(dt.fromisoformat(default_open_date))
+#		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
+#		return(open_entries + entries)
+		return(entries)
 
 	def file_account(self, file):
 		"""Return an account associated with the given file.
@@ -148,6 +166,28 @@ class Importer(ImporterProtocol):
 		"""
 		return
 
+	def map_universal_table(self,table):
+		uentries=[]
+		for tr in table:
+			urd = impsh.UniRow()._asdict()
+			for key,val in zip(vanguard_map.values(),tr):
+				if key in urd:
+					urd[key]=val
+			urd['date'] = dt.date(dt.strptime(urd['date'],'%m/%d/%Y'))
+			urd['narration']=" / ".join([urd['description'],urd['type']])
+			if urd['type'] in action_map:
+				urd['action']=action_map[urd['type']]
+			else:
+				sys.stderr.write("Vanguard CSV map_universal_table: Unknown action {0}\n".format(urd['type']))
+
+			# Note: this assumes there is another record for reinvesting
+			if urd['action']=='Transfer' or (urd['type'] in skip_zeros and len(urd['price'])==0):
+				sys.stderr.write("Skipping {0} {1} {2}\n".format(urd['type'],urd['date'],urd['symbol']))
+				continue
+			impsh.decimalify(urd)
+			uentries.append(impsh.UniRow(**urd))
+		return(uentries)
+
 	def get_transactions(self,table):
 		entries=[]
 		for fr in map(VanguardRow._make,table): 
@@ -186,7 +226,7 @@ class Importer(ImporterProtocol):
 		# switch to use QIF format names
 		# TODO: Re-use code in qif importer
 		vanguard_action=None
-		if fr.TransactionType in transaction_types:
+		if fr.TransactionType in action_map:
 			vanguard_action=fr.TransactionType
 
 		# unsure what we should do here so bail

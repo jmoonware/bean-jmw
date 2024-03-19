@@ -30,6 +30,8 @@ investment_actions=[
 'MiscExp',
 'Other', 
 'ReinvDiv',
+'ReinvLg',
+'ReinvSh',
 'Sell',
 'ShrsOut',
 'ShrsIn',
@@ -37,6 +39,12 @@ investment_actions=[
 'Xin',
 'Xout',
 ]
+
+map_reinv={
+'ReinvDiv':'Div',
+'ReinvLg':'CGLong',
+'ReinvSh':'CGShort',
+}
 
 # call this from each importer
 
@@ -263,11 +271,11 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 		)
 		postings[1]=p1._replace(
 			account = account_name + ":Cash",
-			units = Amount(amt,currency)
+			units = Amount(abs(amt),currency)
 		)
-	elif uni.action in ['ReinvDiv']:
+	elif uni.action in ['ReinvDiv','ReinvLg','ReinvSh']:
 		postings[0]=p0._replace(
-			account = ":".join([account_name.replace('Assets','Income'),sec_account,"Div"]),
+			account = ":".join([account_name.replace('Assets','Income'),sec_account,map_reinv[uni.action]]),
 			units=Amount(-abs(amt),currency)
 		)
 		postings[1]=p1._replace(
@@ -310,33 +318,19 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 		postings[0]=p0._replace(
 			account = ":".join([account_name,sec_currency]),
 			units=Amount(qty,sec_currency),
-			price = Amount(Decimal(0),currency),
+			price = Amount(prc,currency),
 		)
 		meta=new_metadata(account_name, 0)
 		meta["fixme"] = "Posting needs cost basis"
 		postings[1]=p1._replace(
-			account = ":".join([account_name, "Merger"]),
-			units=Amount(Decimal(0),currency),
-			price = Amount(Decimal(0),currency),
+			account = ":".join([account_name, "Cash"]),
+			units=Amount(amt,currency),
+#			price = Amount(Decimal(0),currency),
 			meta = meta,
 		)
 	elif uni.action=='StkSplit': 
 		sys.stderr.write("StkSplit not implemented\n")
 		pass
-	# just sell shares - manually fix where they go later!
-	# looks like sale for transfer between e.g. share classes 
-	elif uni.action=='ShrsOut': 
-		# FIXME
-		amt = Decimal('0') # Decimal(uni.amount) is empty!
-		price = Decimal('0')
-		postings[0]=p0._replace(
-			account = ":".join([account_name, sec_account]),
-			units=Amount(-qty,sec_currency),
-		)
-		postings[1]=p1._replace(
-			account = account_name + ":FIXME",
-			units = Amount(amt,currency)
-		)
 	# case of cash OfxTransaction
 	# Single-leg this for non-investment accounts
 	elif uni.action in ['Debit','Credit','Other','Cash']:
