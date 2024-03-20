@@ -30,6 +30,14 @@ def convert_currency(symbol,units,quote_date=None):
 
 # for report_config file
 report_config_default = 'bcr.tsv'
+# account = name of account
+# include = 'y' include in report, anything else dont include
+# months = number of months for average (overrides span end_date-start_date)
+#    This is useful if the report span is say < 12 months, but you have
+#    monthly expenses to average over say 12 months (once a year) or some
+#    other interval. Value <=0 then use time span.
+# taxfed = 'y' means federally taxable, TODO
+# taxstate = 'y' means state taxable, TODO
 reportFields=['account','include','months','taxfed','taxstate']
 ReportElement=namedtuple('ReportElement',reportFields) 
 
