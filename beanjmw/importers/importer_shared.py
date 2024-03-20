@@ -213,7 +213,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 		)
 		aname='Cash'
 		# shares in came from a share exchange somewhere else
-		if uni.action == 'ShrsIn' and "TRANSFER" in uni.narration.upper(): 
+		if uni.action == 'ShrsIn' and uni.narration and "TRANSFER" in uni.narration.upper(): 
 			aname = 'Transfer'
 		postings[1]=p1._replace(
 			account = ":".join([account_name,aname]),
@@ -241,7 +241,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 			price = Amount(prc,currency),
 		)
 		tail=":Cash"
-		if uni.action=='ShrsOut' and "TRANSFER" in uni.narration.upper():
+		if uni.action=='ShrsOut' and uni.narration and "TRANSFER" in uni.narration.upper():
 			tail=":Transfer"
 		postings[1]=p1._replace(
 			account = account_name + tail,
