@@ -1,3 +1,4 @@
+![build workflow](https://github.com/jmoonware/bean-jmw/actions/workflows/python-app.yml/badge.svg)
 # bean-jmw
 Code for using beancount v2 plain-text accounting package.
 
