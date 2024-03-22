@@ -265,7 +265,7 @@ if clargs.html:
 		if os.path.isfile(copy_file):
 			os.system("cp {0} .".format(copy_file))
 		else:
-			system.stderr.write("Can't find {0} to copy\n".format(copy_file))
+			sys.stderr.write("Can't find {0} to copy\n".format(copy_file))
 
 	print_doc.append("<!DOCTYPE html>")
 	print_doc.append("<html>")

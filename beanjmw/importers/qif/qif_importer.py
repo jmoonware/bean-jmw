@@ -297,7 +297,7 @@ class Importer(ImporterProtocol):
 				act_str=self.clean_str(qt.action)
 				n_toks=[self.clean_str(qt.memo),act_str]
 				 # truly blank
-				if len(''.join(n_toks))==0 and not 'category' in meta:
+				if len(''.join(n_toks))==0 and (urd['category']==None or len(urd['category']==0)):
 					n_toks[0]='EMPTY' # for assigning later
 				urd['payee']="Investment from QIF"
 				urd['memo']=self.clean_str(qt.memo)
