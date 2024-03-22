@@ -6,6 +6,12 @@ dependencies = [
 	"beancount==2.3.5",
 	"pyyaml",
     "numpy",
+	"scipy",
+	"yfinance",
+	"ofxparse",
+	"requests",
+	"matplotlib",
+	"beautifulsoup4"
 ]
 requires-python = "<3.10"
 authors = [
