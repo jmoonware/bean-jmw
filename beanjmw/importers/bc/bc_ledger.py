@@ -2,7 +2,7 @@
 # Useful to combine two ledgers and deduplicate entries wrt the existing
 
 from beancount.ingest.importer import ImporterProtocol
-from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
+from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType, Balance
 from beancount.core.number import MISSING
 from beancount.loader import load_file
 
@@ -63,7 +63,11 @@ class Importer(ImporterProtocol):
 							entries.append(e._replace(postings=[e.postings[pidx]]))
 						else:
 							entries.append(e)
-				else:
+				elif type(e) == Balance:
+					# only include balace statements from this account
+					if self.account_name in e.account:
+						entries.append(e)
+				else: # just keep any other transaction
 					entries.append(e)
 		except Exception as ex:
 			sys.stderr.write("Unable to open or parse {0}: {1}\n".format(file.name,ex))

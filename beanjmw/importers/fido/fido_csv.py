@@ -33,8 +33,8 @@ fido_column_map = {
 'Account':'account', 
 'Action':'action', 
 'Symbol':'symbol', 
-'Security Description':'description', 
-'Security Type':'type', 
+'Description':'description', 
+'Type':'type', 
 'Quantity':'quantity', 
 'Price ($)':'price', 
 'Commission ($)':'commission', 
@@ -74,11 +74,11 @@ class Importer(ImporterProtocol):
 			head_lines=file.head(num_bytes=100000).split('\n')
 			found=False
 			ln=0
-			while ln < len(head_lines):
-				if 'Brokerage' in head_lines[ln]:
-					break
+			while ln < len(head_lines) and "Run Date" not in head_lines[ln].split(',')[0]:
 				ln+=1
-			for l in head_lines[ln+3:]:
+			if ln == len(head_lines): # still no love...
+				return False
+			for l in head_lines[ln+1:]:
 				toks=l.split(',')
 				if len(toks) > 1:
 					fa=self.unquote(toks[1])
@@ -476,24 +476,25 @@ class Importer(ImporterProtocol):
 			return(table)
 
 		nl=0
-		while nl < len(lines):
-			if "Brokerage" in lines[nl]:
-				break
+		while nl < len(lines) and "Run Date" not in lines[nl].split(',')[0]:
 			nl+=1
 
 		# make sure the columns haven't changed... 
-		is_fido=True
-		cols=[self.unquote(c.strip()) for c in lines[nl+2].split(',')]
-		for c,fc in zip(cols,fido_cols):
-			if c!=fc:
-				is_fido=False
-				break
+		if nl >= len(lines): # didn't find line with first column tok
+			is_fido=False
+		else:
+			is_fido=True
+			cols=[self.unquote(c.strip()) for c in lines[nl].split(',')]
+			for c,fc in zip(cols,fido_cols):
+				if not fc in c:
+					is_fido=False
+					break
 		if not is_fido or len(cols)!=len(fido_cols):
 			sys.stderr.write("Bad format {0} (len={1}), should be {2} (len={3})".format(cols,len(cols),fido_cols,len(fido_cols)))
 			return(table)
 	
 		# it's got the right columns, now extract the data	
-		for l in lines[nl+3:]:
+		for l in lines[nl+1:]:
 			ctoks=[self.unquote(c.strip()) for c in l.split(',')]
 			if len(ctoks) >= len(fido_cols):
 				if ctoks[1][len(ctoks[1])-4:]==self.acct_tail:

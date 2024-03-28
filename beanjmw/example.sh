@@ -71,7 +71,7 @@ python -c 'import glob,shutil; print([shutil.copy(x,x.replace("_unassigned",""))
 
 # Now extract again, but this time using the auto-assign yaml
 # files
-# This is unexcitingi, as we created the rules from this exact file,
+# This is unexciting, as we created the rules from this exact file,
 # nothing changes; in fact, t.txt should be empty of transactions
 # since they are all duplicates of the original
 # 
