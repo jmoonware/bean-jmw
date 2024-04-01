@@ -15,7 +15,7 @@ from beancount.ingest import cache
 from beancount.ingest.identify import find_imports
 
 from importers.filters.assign import assign_accounts, assign_check_payees
-from importers.filters.assign import deduplicate
+from importers.filters.assign import deduplicate, auto_open
 
 import importers.filters.assign 
 importers.filters.assign.dir_path=path.join(path.abspath(os.curdir),"yaml")
@@ -66,6 +66,7 @@ def filter_entries(extracted_entries_list):
             acct=importer.file_account(file)
             if account_filter and not re.search(account_filter,acct):
                 continue
+				
             accounts.append((filename,acct))
             filtered_entries_list.append((filename,entries))
     return filtered_entries_list,accounts
@@ -111,6 +112,13 @@ def process_extracted_entries(extracted_entries_list, ledger_entries):
     # for each extracted entry, look for duplicates
     deduped_entries_list=deduplicate(new_entries_list, ledger_entries)	
 
+	# remove open statements and use the auto plugin if true
+	# that gets rid of "duplicate open" errors in bean-check
+	# for accounts kept in separate files
+    if hasattr(accts, "auto_open"):
+        if accts.auto_open:
+            deduped_entries_list = auto_open(deduped_entries_list)
+
     return deduped_entries_list
 
 if __name__=='__main__':
@@ -126,6 +134,9 @@ if __name__=='__main__':
 	except Exception as ex:
 		sys.stderr.write("Command line error - {0}\n".format(ex))
 		sys.exit(1)
+
+	if hasattr(accts, "auto_open"):
+		print('plugin "beancount.plugins.auto"')
 
 	EntryPrinter.META_IGNORE.add('__residual__')
 	scripts_utils.ingest(CONFIG, hooks=[process_extracted_entries])

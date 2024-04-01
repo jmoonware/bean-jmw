@@ -303,6 +303,19 @@ def save_unassigned(unassigned_payees,account_file,ex_file):
 					f.write("\""+k+"\"" + ": " + oup[k] + "\n")
 	return
 
+def auto_open(entry_list):
+	''' Removes open statements - problematic for deduplicate
+	'''
+	new_entry_list=[]
+	for fn, entries in entry_list:
+		new_entries = []
+		for e in entries:
+			if type(e) == Open:
+				continue
+			new_entries.append(e)
+		new_entry_list.append((fn, new_entries))
+	return(new_entry_list)
+
 def assign_accounts(extracted_entries_list,ledger_entries,filename_accounts):
 	""" Assigns accounts from payee field and open any new accounts
 	"""
