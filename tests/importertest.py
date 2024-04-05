@@ -67,7 +67,7 @@ def converttest(t_examples,t_accounts,t_acct_nums,t_errs,t_imp,acct_filter,outpu
 	all_entries.sort(key=lambda e:str(type(e)).replace("Balance", "Z"))
 	valid_errors = validation.validate(all_entries,options.OPTIONS_DEFAULTS,None,validation.HARDCORE_VALIDATIONS)
 	# should have no errors here
-	[print("=== " + e.message) for e in valid_errors]
+	[print("=== " + str(e)) for e in valid_errors]
 	# make an original if it doesn't exist
 	out_path = os.path.join(cpath,output_name)
 	EntryPrinter.META_IGNORE.add('__residual__')

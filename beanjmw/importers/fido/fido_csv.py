@@ -23,6 +23,12 @@ investment_actions={
 'DIRECT DEBIT':'Xout',
 'MERGER ':'Merger',
 'DISTRIBUTION':'ShrsIn',
+'TRANSFERRED FROM':'ShrsIn',
+'TRANSFERRED TO':'ShrsOut',
+'TRANSFER OF':'ShrsIn',
+'ADVISOR FEE':'MiscExp',
+'ASSET FEE':'MiscExp',
+'RECEIVED FROM ':'Transfer',
 }
 
 default_open_date='2000-01-01'
@@ -195,6 +201,8 @@ class Importer(ImporterProtocol):
 			unirows.append(importer_shared.UniRow(**urd))
 
 		return(unirows)
+
+	### DELETE CODE BELOW
 
 	def get_transactions(self,table):
 		entries=[]

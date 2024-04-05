@@ -196,30 +196,27 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	p1=postings[1] 
 
 	# deal with each type of investment action:
-	if uni.action in ['Buy','ShrsIn']:
+	if uni.action in ['Buy']:
 		if sec_account=='Cash': # KLUDGE FOR FIDO 
 			pcost = None
 			pprice = None
+			qty = amt
 		else:
 			pcost = Cost(prc,currency,uni.date,"")
 			pprice = Amount(prc,currency) 
 		acct = ":".join([account_name, sec_account])
 		postings[0]=p0._replace(
 			account = acct,
-			units=Amount(qty,sec_currency),
+			units=Amount(abs(qty),sec_currency),
 			price = pprice,
 			cost = pcost,
 			meta = meta,
 		)
-		aname='Cash'
-		# shares in came from a share exchange somewhere else
-		if uni.action == 'ShrsIn' and uni.narration and "TRANSFER" in uni.narration.upper(): 
-			aname = 'Transfer'
 		postings[1]=p1._replace(
-			account = ":".join([account_name,aname]),
+			account = ":".join([account_name,"Cash"]),
 			units = Amount(-abs(amt),currency)
 		)
-	elif uni.action in ['Sell','ShrsOut']: 
+	elif uni.action in ['Sell']: 
 		commission=Decimal(0)
 		if uni.commission:
 			commission=uni.commission
@@ -240,11 +237,8 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 			cost=Cost(None,None,None,None),
 			price = Amount(prc,currency),
 		)
-		tail=":Cash"
-		if uni.action=='ShrsOut' and uni.narration and "TRANSFER" in uni.narration.upper():
-			tail=":Transfer"
 		postings[1]=p1._replace(
-			account = account_name + tail,
+			account = account_name + ":Cash",
 			units = Amount(amt-commission,currency)
 		)
 		# interpolated posting
@@ -312,7 +306,39 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 			account = ":".join([account_name, "Transfer"]),
 			units=Amount(-amt,sec_currency),
 		)
-	# Merger just removes or adds shares at 0 cost - basis 
+	elif uni.action in ['ShrsIn','ShrsOut']: 
+		pqty = qty
+		if sec_account=='Cash': # KLUDGE FOR FIDO 
+			pcost = None
+			pprice = None
+			pqty = amt
+		else:
+			pcost = Cost(None,None,None,None)
+#			pcost = Cost(prc,currency,uni.date,"")
+			pprice = Amount(prc,currency) 
+		postings[0]=p0._replace(
+			account = ":".join([account_name,sec_account]),
+			units=Amount(pqty,sec_currency),
+			cost=pcost,
+			price=pprice,
+		)
+		if amt !=0: # has cost basis so looks like a Buy
+			tcurrency = currency
+			tu = amt
+			tcost = None
+			tprice = None
+		else:
+			tcurrency = sec_currency
+			tcost = None # Cost(None,None,None,None)
+			tu = qty
+			tprice = pprice
+		postings[1]=p1._replace(
+			account = ":".join([account_name, "Transfer"]),
+			units = Amount(-tu,tcurrency),
+			cost = tcost,
+			price = tprice,
+		)
+	# Merger just removes or adds shares without a basis 
 	# needs to be entered manually (maybe a way to get this?)
 	elif uni.action == 'Merger':
 		postings[0]=p0._replace(
@@ -325,6 +351,23 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 		postings[1]=p1._replace(
 			account = ":".join([account_name, "Cash"]),
 			units=Amount(amt,currency),
+#			price = Amount(Decimal(0),currency),
+			meta = meta,
+		)
+	# Transfer also removes or adds shares at explicit 0 cost - basis 
+	# needs to be entered manually 
+	elif uni.action == 'Transfer':
+		postings[0]=p0._replace(
+			account = ":".join([account_name,sec_currency]),
+			units=Amount(qty,sec_currency),
+			price = Amount(prc,currency),
+			cost = Cost(Decimal(0),currency,uni.date,""),
+		)
+		meta=new_metadata(account_name, 0)
+		meta["fixme"] = "Transfer posting needs cost basis"
+		postings[1]=p1._replace(
+			account = ":".join([account_name, "Transfer"]),
+			units=Amount(Decimal(0),currency),
 #			price = Amount(Decimal(0),currency),
 			meta = meta,
 		)

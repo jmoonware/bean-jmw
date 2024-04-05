@@ -28,7 +28,7 @@ staging_path = "../staging"
 
 # relative to ledger_path
 backup_folder = "backup"
-bc_ext = ".txt" # beancount file extension
+bc_ext = ".bc" # beancount file extension
 
 class bcolors:
     HEADER = '\033[95m'
@@ -78,7 +78,8 @@ def check(acct,opath):
 	p = subprocess.Popen(["bean-check",opath],stderr=subprocess.PIPE)
 	lines = p.stderr.readlines()
 	if len(lines) > 0:
-		nerr = len([x for x in lines if opath in x.decode('utf-8')])
+		full_opath = os.path.abspath(opath)
+		nerr = len([x for x in lines if full_opath in x.decode('utf-8')])
 		print(bcolors.FAIL+ "Errors for {0}, {1}: {2}".format(acct,opath,nerr) + bcolors.ENDC)
 		if clargs.verbose:
 			for x in lines:
@@ -142,6 +143,8 @@ def extract_files():
 			check_fatal_error(run_command(ecom))
 			if is_nothing(npath):
 				print(bcolors.OKBLUE+"Nothing to do for {0}, {1}".format(acct,npath)+bcolors.ENDC)
+				ccom = "cat {0} > {1}".format(npath,opath)
+				check_fatal_error(run_command(ccom))
 			else:
 				if os.path.isfile(epath):
 					ccom = "cat {0} {1} > {2}".format(epath,npath,opath)
