@@ -112,6 +112,8 @@ def decimalify(urd):
 	for att,sf in zip(convert_names,sfig):
 		if urd[att] and type(urd[att])==str and len(urd[att]) > 0:
 			urd[att] = round(Decimal(urd[att]),sf)
+		elif type(urd[att])==str and len(urd[att])==0:
+			urd[att] = None
 	return
 
 def build_narration(urd):
