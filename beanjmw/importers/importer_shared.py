@@ -129,9 +129,16 @@ def fix_rounding(rec,acct):
 	"""
 	meta=new_metadata(acct, 0)
 	amt=Decimal(0)
+	fees=Decimal(0)
+	if rec.fees:
+		fees = rec.fees + Decimal('0.00')
+	commission=Decimal(0)
+	if rec.commission:
+		commission = rec.commission + Decimal('0.00')
 	# use total if given, otherwise amount
 	if rec.total and rec.total != 0:
-		amt = rec.total + Decimal('0.00')
+		amt = rec.total + Decimal('0.00') - fees - commission
+	# amt is cash net of fees and commission
 	elif rec.amount and rec.amount != 0:
 		amt = rec.amount + Decimal('0.00')
 	qty=Decimal(0)
@@ -140,7 +147,7 @@ def fix_rounding(rec,acct):
 	prc=Decimal(0)
 	if rec.price and rec.price > 0 and qty != 0:
 		prc=rec.price
-		tprc=round(abs(amt/qty),6)
+		tprc=round(abs((amt + fees + commission)/qty),6)
 		if abs(qty*(tprc-prc)) > 0.0025: # exceeds tolerance
 			meta["rounding"]="Price was {0}".format(prc)
 			prc=tprc
@@ -199,6 +206,28 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 
 	# deal with each type of investment action:
 	if uni.action in ['Buy']:
+		if uni.commission and uni.commission > 0:
+			postings.append(
+				Posting(
+					account = account_name.replace('Assets','Expenses') + ":Commission",
+					units=Amount(uni.commission,currency),
+					cost=None,
+					price=None,
+					flag=None,
+					meta={}
+				)
+			)
+		if uni.fees and uni.fees > 0:
+			postings.append(
+				Posting(
+					account = account_name.replace('Assets','Expenses') + ":Fees",
+					units=Amount(uni.fees,currency),
+					cost=None,
+					price=None,
+					flag=None,
+					meta={}
+				)
+			)
 		if sec_account=='Cash': # KLUDGE FOR FIDO 
 			pcost = None
 			pprice = None
@@ -219,13 +248,22 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 			units = Amount(-abs(amt),currency)
 		)
 	elif uni.action in ['Sell']: 
-		commission=Decimal(0)
-		if uni.commission:
-			commission=uni.commission
+		if uni.commission and uni.commission > 0:
 			postings.append(
 				Posting(
 					account = account_name.replace('Assets','Expenses') + ":Commission",
-					units=Amount(commission,currency),
+					units=Amount(uni.commission,currency),
+					cost=None,
+					price=None,
+					flag=None,
+					meta={}
+				)
+			)
+		if uni.fees and uni.fees > 0:
+			postings.append(
+				Posting(
+					account = account_name.replace('Assets','Expenses') + ":Fees",
+					units=Amount(uni.fees,currency),
 					cost=None,
 					price=None,
 					flag=None,
@@ -238,10 +276,11 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 			# let Beancount booking rules take care of cost
 			cost=Cost(None,None,None,None),
 			price = Amount(prc,currency),
+			meta = meta,
 		)
 		postings[1]=p1._replace(
 			account = account_name + ":Cash",
-			units = Amount(amt-commission,currency)
+			units = Amount(amt,currency)
 		)
 		# interpolated posting
 		# Open account here as we need the Open to have no 

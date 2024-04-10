@@ -46,7 +46,7 @@ delete_suffix = ".deleteme"
 try:
 	from accts import ledgersbyacct
 except ImportError as ie:
-	sys.stderr.write("Can't import ledgersbyacct from accts: {0}\n".format(ie))
+	sys.stderr.write(bcolors.FAIL + "Can't import ledgersbyacct from accts: {0}\n".format(ie) + bcolors.ENDC)
 	sys.exit(1)
 
 
@@ -73,30 +73,30 @@ def is_nothing(fn):
 			nothing = True
 	return(nothing)
 
-def check(acct,opath):
+def check(acct,rc_path):
 	passed = False
-	p = subprocess.Popen(["bean-check",opath],stderr=subprocess.PIPE)
+	p = subprocess.Popen(["bean-check",rc_path],stderr=subprocess.PIPE)
 	lines = p.stderr.readlines()
 	if len(lines) > 0:
-		full_opath = os.path.abspath(opath)
-		nerr = len([x for x in lines if full_opath in x.decode('utf-8')])
-		print(bcolors.FAIL+ "Errors for {0}, {1}: {2}".format(acct,opath,nerr) + bcolors.ENDC)
+		full_rc_path = os.path.abspath(rc_path)
+		nerr = len([x for x in lines if full_rc_path in x.decode('utf-8')])
+		print(bcolors.FAIL+ "Errors for {0}, {1}: {2}".format(acct,rc_path,nerr) + bcolors.ENDC)
 		if clargs.verbose:
 			for x in lines:
 				l = x.decode('utf-8').strip()
 				if len(l) > 0:
 					print(l)
 	else:
-		print(bcolors.OKGREEN+"Check passed for {0}, {1}".format(acct,opath)+bcolors.ENDC)
+		print(bcolors.OKGREEN+"Check passed for {0}, {1}".format(acct,rc_path)+bcolors.ENDC)
 		passed=True
 	return(passed)
 
 def get_filenames(filebase, ext = bc_ext):
 	epath = os.path.join(ledger_path,filebase + ext)
-	npath = os.path.join(staging_path,filebase + "_new" + ext)
-	opath = os.path.join(staging_path, filebase + "_rc" + ext)
+	new_path = os.path.join(staging_path,filebase + "_new" + ext)
+	rc_path = os.path.join(staging_path, filebase + "_rc" + ext)
 	bpath = os.path.join(backup_path(), filebase) + ext + ".bak"
-	return epath, npath, opath, bpath
+	return epath, new_path, rc_path, bpath
 
 def remove_marked():
 	deletes = []
@@ -127,32 +127,33 @@ def run_command(com):
 		try:
 			os.system(com)
 		except Exception as ex:
-			sys.stderr.write("Error: run_command: {0}: {1}".format(com,str(ex)))
+			sys.stderr.write(bcolors.FAIL + "Error: run_command: {0}: {1}".format(com,str(ex))+bcolors.ENDC)
 			error = str(ex)
 	return(error)
 
 def extract_files():
 	make_path(staging_path)
 	for acct in ledgersbyacct:
-		epath, npath, opath, bpath = get_filenames(ledgersbyacct[acct])
+		epath, new_path, rc_path, bpath = get_filenames(ledgersbyacct[acct])
 		if os.path.isfile(epath):
-			ecom = "python -m beanjmw.bci extract -e {0} -a {1} > {2}".format(epath,acct,npath)
+			ecom = "python -m beanjmw.bci extract -e {0} -a {1} > {2}".format(epath,acct,new_path)
 		else:
-			ecom = "python -m beanjmw.bci extract -a {0} > {1}".format(acct,npath)
+			ecom = "python -m beanjmw.bci extract -a {0} > {1}".format(acct,new_path)
 		if not clargs.check:
 			check_fatal_error(run_command(ecom))
-			if is_nothing(npath):
-				print(bcolors.OKBLUE+"Nothing to do for {0}, {1}".format(acct,npath)+bcolors.ENDC)
-				ccom = "cat {0} > {1}".format(npath,opath)
-				check_fatal_error(run_command(ccom))
+			if is_nothing(new_path):
+				print(bcolors.OKBLUE+"Nothing to do for {0}, {1}".format(acct,new_path)+bcolors.ENDC)
+			#	ccom = "cat {0} > {1}".format(new_path,rc_path)
+			#	check_fatal_error(run_command(ccom))
 			else:
 				if os.path.isfile(epath):
-					ccom = "cat {0} {1} > {2}".format(epath,npath,opath)
+					ccom = "cat {0} {1} > {2}".format(epath,new_path,rc_path)
 				else:
-					ccom = "cat {0} > {1}".format(npath,opath)
+					ccom = "cat {0} > {1}".format(new_path,rc_path)
 				check_fatal_error(run_command(ccom))
 		# do a check of result
-		passed = check(acct,opath)
+		if os.path.isfile(rc_path):
+			passed = check(acct,rc_path)
 	return
 
 def make_path(bdir):
@@ -189,18 +190,19 @@ def update_files():
 
 	# make sure bean-check isn't giving errors
 	for acct in ledgersbyacct:
-		epath, npath, opath, bpath = get_filenames(ledgersbyacct[acct])
-		if not check(acct,opath):
-			sys.stderr.write("Failed check {0}, {1}\n".format(acct,opath))
-			if not clargs.force:
-				sys.stderr.write("Use --force to override\n")
-				return
+		epath, new_path, rc_path, bpath = get_filenames(ledgersbyacct[acct])
+		if os.path.isfile(rc_path):
+			if not check(acct,rc_path):
+				sys.stderr.write("Failed check {0}, {1}\n".format(acct,rc_path))
+				if not clargs.force:
+					sys.stderr.write("Use --force to override\n")
+					return
 
 	# now actually move the files around	
 	ok_remove = True
 	check_fatal_error(make_path(backup_path()))
 	for acct in ledgersbyacct:
-		epath, npath, opath, bpath = get_filenames(ledgersbyacct[acct])
+		epath, new_path, rc_path, bpath = get_filenames(ledgersbyacct[acct])
 	
 		# we have an existing ledger - make a backup
 		if os.path.isfile(epath):
@@ -212,12 +214,13 @@ def update_files():
 					ok_remove = False
 		# ledger should be moved or non-existant at this point
 		# move release candidate to current active ledger file
-		if not os.path.isfile(epath):
-			if clone_file(opath,epath) != None:
+		if not os.path.isfile(epath) and os.path.isfile(rc_path):
+			if clone_file(rc_path,epath) != None:
 				ok_remove=False
 		else:
-			sys.stderr.write("File exists - can't update {0}\n".format(epath))
-			ok_remove = False
+			if os.path.isfile(rc_path):
+				sys.stderr.write("File exists - can't update {0}\n".format(epath))
+				ok_remove = False
 	# finally, clean up marked files
 	if ok_remove:
 		remove_marked()
@@ -249,7 +252,7 @@ def clone_file(src,dst, copy = False):
 
 def check_fatal_error(msg):
 	if msg!=None:
-		sys.stderr.write("Fatal Error: {0}\n".format(msg))
+		sys.stderr.write(bcolors.FAIL + "Fatal Error: {0}\n".format(msg) + bcolors.ENDC)
 		sys.stderr.write("Goodbye\n")
 		sys.exit(1)
 	return
@@ -405,12 +408,14 @@ def split_ledger():
 	for acct in ledgersbyacct:
 		with open(os.path.join(staging_path,ledgersbyacct[acct]+".bc"),'w') as f:
 			f.write('plugin "beancount.plugins.auto"\n')	
+			f.write('option "booking_method" "FIFO"\n')	
 			f.write('include "common.bc"\n\n')	
 			printer.print_entries(entriesbyacct[acct],file=f)
 	
 	with open(os.path.join(staging_path,"master.bc"),'w') as f:
 		f.write("; auto-generated master file {0}\n".format(dt.now().isoformat()))
 		f.write('plugin "beancount.plugins.auto"\n')	
+		f.write('option "booking_method" "FIFO"\n')	
 		f.write('include "common.bc"\n')	
 		for acct in ledgersbyacct:
 			f.write('include "{0}"\n'.format(ledgersbyacct[acct]+'.bc'))

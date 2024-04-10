@@ -581,7 +581,12 @@ def check_cache(symbol):
 	if 'QUOTE_DATE' in info_table:
 		tzi=tz('US/Pacific')
 		right_now=tzi.localize(dt.now())
-		last_quote_time=tzi.localize(dt.fromisoformat(info_table['QUOTE_DATE']))
+		try:
+			last_quote_time=tzi.localize(dt.fromisoformat(info_table['QUOTE_DATE']))
+		except ValueError as ve:
+			sys.stderr.write("Error with {0}: {1}\n".format(info_table['QUOTE_DATE'],ve))
+			# expire the cache
+			last_quote_time = right_now -timedelta(days=cache_timeout_days+1)
 		if right_now-timedelta(days=cache_timeout_days) < last_quote_time:
 			sys.stderr.write("Returning yaml cache info for {}...\n".format(symbol))
 		else:

@@ -137,6 +137,8 @@ if __name__=='__main__':
 
 	if hasattr(accts, "auto_open"):
 		print('plugin "beancount.plugins.auto"')
+		# TODO: make booking method conifguable
+		print('option "booking_method" "FIFO"')
 
 	EntryPrinter.META_IGNORE.add('__residual__')
 	scripts_utils.ingest(CONFIG, hooks=[process_extracted_entries])

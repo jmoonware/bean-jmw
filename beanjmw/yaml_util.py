@@ -84,9 +84,11 @@ n_int=sum([True for k in sorted_entries if type(k)==int])
 if n_int/len(sorted_entries) > 0.99: # all integers
 	col_width=6
 	quotes=""
+	is_checkno=True
 else:
 	col_width=40
 	quotes="\'"
+	is_checkno=False
 
 # override value if set on command line
 if clargs.column_width!=0:
@@ -96,7 +98,7 @@ if clargs.column_width!=0:
 # if the simpler regex pattern assigns to the same account
 # using a more complex pattern, then remove the more complex pattern
 simplified_entries=OrderedDict(sorted_entries)
-if clargs.similar:
+if clargs.similar and not is_checkno:
 	remove_pattern={}
 	similar_patterns={}
 	removed=0
