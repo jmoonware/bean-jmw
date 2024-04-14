@@ -222,7 +222,7 @@ def get_holdings_table(symbol,yf_ticker):
 			toks=tdat.split('[')[2:] # each table line
 			for tline in toks:
 				ptoks =  re.split(el_pat,tline)
-				if 'NA' in ptoks[perc_col]:
+				if 'NA' in ptoks[perc_col].replace('/',''):
 					perc.append(0.)
 				else:
 					perc.append(float(ptoks[perc_col].replace('%','')))
@@ -253,6 +253,33 @@ def get_holdings_table(symbol,yf_ticker):
 #	print(sum(perc))
 	except Exception as ex:
 		sys.stderr.write("Problem getting holdings {0}:{1}\n".format(symbol,ex))
+
+	# last-chance - don't return an empty table
+	# just use this security at 100%
+	# This is needed for some bond ETFs
+	if len(holdings_table['perc'])==0:
+		holdings_table['symbol']=[symbol]
+		if yf_ticker.info and 'longName' in yf_ticker.info:
+			holdings_table['name']=[yf_ticker.info['longName']]
+		else:
+			holdings_table['name']=[symbol]
+		holdings_table['perc']=[100.]
+
+	# now make sure holdings table sums to 100%
+	# some rounding errors in funds with many holdings are 
+	# not normalized correctly!
+	renorm_cutoff = 1 # percent
+	if sum(holdings_table['perc']) > 100 + renorm_cutoff:
+		# suppress "long tail" of small holdings
+		# find cutoff
+		hold_perc_cum = np.cumsum(holdings_table['perc'])
+		hold_npa = np.array(holdings_table['perc'])
+		cutoff = hold_npa[hold_perc_cum < 100-renorm_cutoff]
+		renorm = hold_npa[len(cutoff):]
+		den = sum(renorm)
+		if den > 0:
+			hold_npa[len(cutoff):]=renorm_cutoff*renorm/den
+		holdings_table['perc']=[float(x) for x in hold_npa]
 	
 	return(holdings_table)
 
@@ -565,7 +592,7 @@ def quote(symbol,tk=None,prices=None,quote_date=None,quiet=True):
 		
 	return(prc)
 
-def check_cache(symbol):
+def check_cache(symbol, quiet=True):
 	yaml_file=os.path.join(cache_dir,symbol+'.yaml')
 	info_table={}
 	if os.path.isfile(yaml_file):
@@ -588,9 +615,11 @@ def check_cache(symbol):
 			# expire the cache
 			last_quote_time = right_now -timedelta(days=cache_timeout_days+1)
 		if right_now-timedelta(days=cache_timeout_days) < last_quote_time:
-			sys.stderr.write("Returning yaml cache info for {}...\n".format(symbol))
+			if not quiet:
+				 sys.stderr.write("Info: Returning yaml cache info for {}...\n".format(symbol))
 		else:
-			sys.stderr.write("Yaml cache out of date for {}...\n".format(symbol))
+			if not quiet:
+				sys.stderr.write("Info: Using out of date yaml cache for {}...\n".format(symbol))
 	return(info_table)
 
 # call this function on each symbol in portfolio

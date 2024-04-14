@@ -17,6 +17,7 @@ import sys
 from beancount.loader import load_file
 from datetime import datetime as dt
 from beancount.core.data import Price, Amount, Decimal
+import re
 
 ap=argparse.ArgumentParser()
 ap.add_argument('-f','--filename',required=True,help='Assets (tsv, Account,Units,Currency,Report_Currency(default:USD) columns')
@@ -261,15 +262,53 @@ print(sum([v for v in by_sector.values()]))
 
 by_holding={}
 
+# attempt to reduce near redundancies
+clean_holdings='\t'
+clean_holdings_list=[]
+
+equivalent_suffix = [' INC',' & CO',' CO ',' CO$',' CO-',' CORP',' LLC',' LTD',' PLC',' AG ',' AG$',' COMPAN']
+
+rep_chars = {
+	'/':' ',
+	'.':' ',
+	'\t':'',
+	'(':' ',
+	'*':' ',
+	')':' ',
+}
+
+def clean_holding(s):
+	trunc_s = s.upper()
+	for r in rep_chars:
+		trunc_s = trunc_s.replace(r,rep_chars[r])
+	for es in equivalent_suffix:
+		if es in trunc_s:
+			trunc_s = trunc_s.split(es)[0]+" CORP"
+	return(trunc_s)
+
 for s in symbol_highlow:
 	frac_tot=symbol_info[s]['TOTAL']/gt
 	perc_by_name={}
 	# create dict; note some names are degenerate
 	for h,p in zip(symbol_info[s]['HOLDINGS']['name'],symbol_info[s]['HOLDINGS']['perc']):
-		if h in perc_by_name:
-			perc_by_name[h]+=p
+		clean_h = clean_holding(h)
+		sr = re.search(clean_h,clean_holdings)
+		if not sr:
+			# separate names with tabs
+			clean_holdings_list.extend(clean_h + '\t')
+			clean_holdings = ''.join(clean_holdings_list)
+		else: # matched a portion of a longer name
+			full_holding = re.search('\t[^\t]*'+clean_h+'.*?\t',clean_holdings)
+			if full_holding:
+				clean_h = full_holding.group()[1:-1]
+			else: # this is an error
+				sys.stderr.write("No long match for {0}\n".format(clean_h))
+			
+		if clean_h in perc_by_name:
+			perc_by_name[clean_h]+=p
 		else:
-			perc_by_name[h]=p
+			perc_by_name[clean_h]=p
+
 	for h in perc_by_name:
 		if h in by_holding:
 			by_holding[h]+=(frac_tot*perc_by_name[h])

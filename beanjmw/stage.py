@@ -188,20 +188,30 @@ def update_files():
 	# don't proceed if this fails
 	check_fatal_error(remove_marked())
 
+	# Bool to set if something to update
+	update_avalilable = [False]*len(ledgersbyacct)
+
 	# make sure bean-check isn't giving errors
-	for acct in ledgersbyacct:
+	for acct_idx, acct in enumerate(ledgersbyacct):
 		epath, new_path, rc_path, bpath = get_filenames(ledgersbyacct[acct])
 		if os.path.isfile(rc_path):
 			if not check(acct,rc_path):
-				sys.stderr.write("Failed check {0}, {1}\n".format(acct,rc_path))
+				sys.stderr.write(bcolors.WARNING + "Failed check {0}, {1}\n".format(acct,rc_path) + bcolors.ENDC)
 				if not clargs.force:
 					sys.stderr.write("Use --force to override\n")
-					return
+				else:
+					update_avalilable[acct_idx]=True
+			else:
+				update_avalilable[acct_idx]=True
 
 	# now actually move the files around	
 	ok_remove = True
 	check_fatal_error(make_path(backup_path()))
-	for acct in ledgersbyacct:
+	for do_update, acct in zip(update_avalilable, ledgersbyacct):
+		if not do_update:
+			sys.stderr.write(bcolors.OKBLUE + "Nothing to update for {0}\n".format(acct) + bcolors.ENDC)
+			continue
+
 		epath, new_path, rc_path, bpath = get_filenames(ledgersbyacct[acct])
 	
 		# we have an existing ledger - make a backup
@@ -243,10 +253,11 @@ def clone_file(src,dst, copy = False):
 			else:
 				shutil.move(src,dst)
 		except Exception as ex:
-			sys.stderr.write("Error cloning {0} to {1}: {2}\n".format(
+			sys.stderr.write(
+				bcolors.FAIL + "Error cloning {0} to {1}: {2}\n".format(
 				src,
 				dst,
-				ex))
+				ex) + bcolors.ENDC)
 			error = str(ex)
 	return(error)	
 

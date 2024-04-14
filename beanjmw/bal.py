@@ -16,7 +16,7 @@ ap=argparse.ArgumentParser()
 ap.add_argument('-f','--filename',required=True,help='Beancount ledger file')
 ap.add_argument('-bf','--balance_file',required=True,help='date,account(s) csv file, each column is balance by date for an account')
 ap.add_argument('-a','--account',required=True,help='Account name (for query and column of balance file')
-ap.add_argument('-isd','--isodates',required=False,help='Dates are in iso format (not mm.dd.yyyy)',default=False,action="store_true")
+ap.add_argument('-iso','--isodates',required=False,help='Dates are in iso format (not mm.dd.yyyy)',default=False,action="store_true")
 
 clargs = ap.parse_args(sys.argv[1:])
 
