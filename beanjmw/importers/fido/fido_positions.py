@@ -111,7 +111,6 @@ class Importer(ImporterProtocol):
           The tidied up, new filename to store it as.
 		"""
 		init_name=os.path.split(file.name)[1]
-#		ds=dt.date(dt.fromtimestamp(os.path.getmtime(file.name))).isoformat()
 		return(init_name)
 
 	def file_date(self, file):
