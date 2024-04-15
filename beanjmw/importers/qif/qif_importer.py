@@ -5,7 +5,7 @@ from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
 
-import beanjmw.importers.importer_shared as impsh
+import beanjmw.importers.importer_shared as impshare
 
 import os,sys
 
@@ -81,57 +81,6 @@ class Importer(ImporterProtocol):
 		else:
 			 return False
 
-	def create_transaction(self,date,amount,payee_str,memo_str,num_str,category,meta):
-		if num_str:
-			num_str=num_str.strip()
-		else:
-			num_str=""
-		if category:
-			# remove invalid chars, capitalize
-			clean_category=category
-			for c in quicken_category_remove:
-				clean_category= clean_category.replace(c,"")
-			cat_toks=clean_category.split(":")
-			cap_cats=[]
-			for ct in cat_toks: # Capitalize First LetterInWords
-				cap_cats.append(ct[0].upper()+ct[1:]) 
-			meta['category']=":".join(cap_cats)
-		if len(num_str) > 0:
-			num_str=" "+num_str
-		check_str=""
-		if payee_str:
-			payee_str=payee_str.strip().replace('/','.')
-			if "CHECK" in payee_str.upper():
-				check_str="Check"
-		else:
-			payee_str=""
-		n_toks=[payee_str,memo_str,check_str+num_str]
-		 # truly blank
-		if len(''.join(n_toks))==0 and not 'category' in meta:
-			n_toks[0]='EMPTY' # for assigning later
-		narration_str=" / ".join(n_toks)
-		tn=Transaction(
-			meta=meta,
-			date=dt.date(date),
-			flag="*",
-			payee=payee_str,
-			narration=narration_str,
-			tags=EMPTY_SET,
-			links=EMPTY_SET,
-			postings=[],
-		)
-		tn.postings.append(
-			Posting(
-				account=self.account_name,
-				units=Amount(amount,self.currency),
-				cost=None,
-				price=None,
-				flag=None,
-				meta={},
-			)
-		)
-		return(tn)
-
 	def map_to_unirow(self,urd,payee_str,memo_str,num_str,category):
 		if num_str:
 			num_str=num_str.strip()
@@ -198,83 +147,22 @@ class Importer(ImporterProtocol):
 		if not qif:
 			sys.stderr.write("Unable to open or parse {0}".format(file.name))
 			return(entries)
-		securities=qif.get_securities() # may be in qif export
 		self.security_list=qif.get_securities() # may be in qif export
 		uentries = self.map_universal_table(qif.get_transactions(True)[0])
-		entries = impsh.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency) 
-		# legacy
-#		for tno, qt in enumerate(qif.get_transactions(True)[0]):
-#			meta=new_metadata(file.name, tno)
-#			if type(qt)==QifTransaction:
-#				# Special case: Used to record split checks for paying
-#				# credit cards - turn each split into a transaction
-#				# and mangle check number so payee isn't assigned from file
-#				if self.is_split_check(qt):
-#					for st in qt.splits:
-#						# need a new meta for each split entry
-#						meta=new_metadata(file.name, tno)
-#						payee_str="SPLIT "
-#						if st.memo:
-#							payee_str = payee_str + st.memo
-#						if st.category:
-#							payee_str = payee_str + " " + st.category
-#						entries.append(
-#							self.create_transaction(
-#								qt.date,
-#								st.amount,
-#								payee_str,
-#								self.clean_str(st.memo),
-#								"S"+self.clean_str(qt.num), # won't be interp as check later
-#								st.category,
-#								meta
-#							)
-#						)
-#				else:
-#					entries.append(
-#						self.create_transaction(
-#							qt.date,
-#							qt.amount,
-#							qt.payee,
-#							self.clean_str(qt.memo),
-#							qt.num,
-#							qt.category,
-#							meta
-#						)
-#					)
-#			elif type(qt)==QifInvestment:
-#				act_str=self.clean_str(qt.action)
-#				n_toks=[self.clean_str(qt.memo),act_str]
-#				 # truly blank
-#				if len(''.join(n_toks))==0 and not 'category' in meta:
-#					n_toks[0]='EMPTY' # for assigning later
-#				narration_str=" / ".join(n_toks)
-#				tn=Transaction(
-#					meta=meta,
-#					date=dt.date(qt.date),
-#					flag="*",
-#					payee="Investment from QIF",
-#					narration=narration_str,
-#					tags=EMPTY_SET,
-#					links=EMPTY_SET,
-#					postings=self.generate_investment_postings(qt, self.account_name, securities),
-#				)
-#				entries.append(tn)
-#
-#		open_date=dt.date(dt.fromisoformat(default_open_date))
-#		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
+		entries = impshare.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency) 
 		return(entries)
 
 	def map_universal_table(self,transactions):
 		uentries = []
 		for qt in transactions: # qif transactions
-			urd = impsh.UniRow()._asdict()
+			urd = impshare.UniRow()._asdict()
 			if type(qt)==QifTransaction:
 				# Special case: Used to record split checks for paying
 				# credit cards - turn each split into a transaction
 				# and mangle check number so payee isn't assigned from file
 				if self.is_split_check(qt):
 					for st in qt.splits:
-						urd = impsh.UniRow()._asdict()
+						urd = impshare.UniRow()._asdict()
 						payee_str="SPLIT "
 						if st.memo:
 							payee_str = payee_str + st.memo
@@ -284,15 +172,15 @@ class Importer(ImporterProtocol):
 						urd['amount']=st.amount
 						urd['action']='Debit'
 						urd['date']=dt.date(qt.date)
-						impsh.decimalify(urd)
-						uentries.append(impsh.UniRow(**urd))
+						impshare.decimalify(urd)
+						uentries.append(impshare.UniRow(**urd))
 				else:
 					self.map_to_unirow(urd, qt.payee, self.clean_str(qt.memo), qt.num, qt.category)
 					urd['amount']=qt.amount
 					urd['action']='Debit'
 					urd['date']=dt.date(qt.date)
-					impsh.decimalify(urd)
-					uentries.append(impsh.UniRow(**urd))
+					impshare.decimalify(urd)
+					uentries.append(impshare.UniRow(**urd))
 			elif type(qt)==QifInvestment:
 				act_str=self.clean_str(qt.action)
 				n_toks=[self.clean_str(qt.memo),act_str]
@@ -315,8 +203,8 @@ class Importer(ImporterProtocol):
 				symbol = [s.symbol for s in self.security_list if s.name and s.name == qt.security]
 				if len(symbol) > 0 and symbol[0]:
 					urd['symbol']=symbol[0]
-				impsh.decimalify(urd)
-				uentries.append(impsh.UniRow(**urd))
+				impshare.decimalify(urd)
+				uentries.append(impshare.UniRow(**urd))
 
 		return(uentries)	
 
@@ -343,7 +231,6 @@ class Importer(ImporterProtocol):
           The tidied up, new filename to store it as.
 		"""
 		init_name=os.path.split(file.name)[1]
-#		ds=dt.date(dt.fromtimestamp(os.path.getmtime(file.name))).isoformat()
 		return(init_name)
 
 	def file_date(self, file):
@@ -358,277 +245,3 @@ class Importer(ImporterProtocol):
 		"""
 		return
 
-	def generate_investment_postings(self,qt,account_name,security_list):
-		postings=[]
-		if not qt.action in qif_investment_actions:
-			sys.stderr.write("Unknown inv action: {0} in {1}\n".format(qt.action,qt))
-			return(postings)
-	
-		# set defaults for two generic postings (p0, p1)
-		sec_name="UNKNOWN"
-		if qt.security:
-			sec_name=qt.security
-		symbol = [s.symbol for s in security_list if s.name and s.name == qt.security]
-		sec_currency="UNKNOWN"
-		sec_account="UNKNOWN"
-		if len(symbol) > 0 and symbol[0]:
-			sec_currency=symbol[0] # should only be one
-			sec_account=symbol[0] # same as currency, except for Cash
-			acct = ":".join([account_name, sec_account])
-			# open account with this currency
-			self.account_currency[acct]=["USD",sec_currency]
-		if qt.action == "Cash":
-			sec_account = "Cash"
-			sec_currency = self.currency
-		qty = Decimal('0')
-		if qt.quantity:
-			qty = qt.quantity
-		map_reinv = {
-			'ReinvDiv':'Div',
-			'ReinvLg':'CGLong',
-			'ReinvMd':'CGMid',
-			'ReinvSh':'CGShort',
-		} 
-		postings.append(
-			Posting(
-				account = account_name,
-				units=Amount(qty,sec_currency),
-				cost=None,
-				price=None,
-				flag=None,
-				meta={}
-			)
-		)
-		postings.append(
-			Posting(
-				account = account_name + ":Cash",
-				units=Amount(-qty,sec_currency),
-				cost=None,
-				price=None,
-				flag=None,
-				meta={}
-			)
-		)
-		# for convenience
-		p0=postings[0]
-		p1=postings[1] 
-	
-		# deal with each type of investment action:
-		if qt.action in ['Buy','ShrsIn']:
-			amt=Decimal(0)
-			if qt.amount:
-				amt=qt.amount
-			prc=Decimal(0)
-			if qt.price:
-				prc=qt.price
-			nprc=prc
-			acct = ":".join([account_name, sec_account])
-			meta = new_metadata(acct,0)
-			if qt.quantity > 0:
-				nprc = abs(amt/qt.quantity)
-				if abs(qt.quantity*(nprc-prc)) > 0.0025: # FIXME
-					meta['rounding']="Price was {0}".format(prc)
-			postings[0]=p0._replace(
-				account = acct,
-				units=Amount(qt.quantity,sec_currency),
-#				cost=Cost(qt.price,self.currency,dt.date(qt.date),""),
-				price = Amount(nprc,self.currency),
-				meta = meta,
-			)
-			aname='Cash'
-			# shares in came from a share exchange somewhere else
-			if qt.action == 'ShrsIn': # KLUDGE
-				if qt.memo and "TRANSFER" in qt.memo.upper():
-					aname = 'Transfer'
-			postings[1]=p1._replace(
-				account = ":".join([account_name,aname]),
-				units = Amount(-amt,self.currency)
-			)
-		elif qt.action=='Sell': 
-			commission=Decimal(0)
-			if qt.commission:
-				commission=qt.commission
-				postings.append(
-					Posting(
-						account = account_name.replace('Assets','Expenses') + ":Commission",
-						units=Amount(commission,self.currency),
-						cost=None,
-						price=None,
-						flag=None,
-						meta={}
-					)
-				)
-			total_cost=commission
-			if qt.amount:
-				total_cost=qt.amount+commission
-			prc=Decimal(0)
-			if qt.price:
-				prc=qt.price
-			postings[0]=p0._replace(
-				account = ":".join([account_name, sec_account]),
-				units=Amount(-qt.quantity,sec_currency),
-		#		cost=None, # let Beancount FIFO booking rule take care
-				price = Amount(prc,self.currency),
-			)
-			postings[1]=p1._replace(
-				account = account_name + ":Cash",
-				units = Amount(total_cost-commission,self.currency)
-			)
-			# interpolated posting
-			# Open account here as we need the Open to have no 
-			# currency explicity defined to pass validation
-			# the __residual__ is needed to pass validation
-			# Rem to add __residual__ to EntryPrinter.META_IGNORE
-			interp_acct = ":".join([self.account_name.replace('Assets','Income'),sec_account,"Gains"])
-			self.account_currency[interp_acct]=None
-			postings.append(
-				Posting(
-					account = interp_acct,
-					units = NoneType(),
-					cost = None,
-					price = None,
-					flag = None,
-					meta={'__residual__':True},
-				)
-			)
-		elif qt.action=='BuyX':
-			pass
-		elif qt.action=='SellX': 
-			pass
-		elif qt.action=='DivX': 
-			pass
-		elif qt.action=='IntIncX': 
-			pass
-		elif qt.action=='CGLongX': 
-			pass
-		elif qt.action=='CGMidX': 
-			pass
-		elif qt.action=='CGShortX': 
-			pass
-		elif qt.action in ['Div','CGShort','CGLong','CGMid']:
-			postings[0]=p0._replace(
-				account = ":".join([account_name.replace('Assets','Income'),sec_account,qt.action]),
-				units=Amount(-qt.amount,self.currency)
-			)
-			postings[1]=p1._replace(
-				account = account_name + ":Cash",
-				units = Amount(qt.amount,self.currency)
-			)
-		elif qt.action in ['IntInc','MiscInc']:
-			postings[0]=p0._replace(
-				account = ":".join([account_name.replace('Assets','Income'),qt.action]),
-				units=Amount(-qt.amount,self.currency)
-			)
-			postings[1]=p1._replace(
-				account = account_name + ":Cash",
-				units = Amount(qt.amount,self.currency)
-			)
-		elif qt.action in ['MiscExp']:
-			postings[0]=p0._replace(
-				account = ":".join([account_name.replace('Assets','Expenses'),qt.action]),
-				units=Amount(-qt.amount,self.currency)
-			)
-			postings[1]=p1._replace(
-				account = account_name + ":Cash",
-				units = Amount(qt.amount,self.currency)
-			)
-		elif qt.action in ['ReinvDiv','ReinvLg','ReinvMd','ReinvSh']: 
-			postings[0]=p0._replace(
-				account = ":".join([account_name.replace('Assets','Income'),sec_account,map_reinv[qt.action]]),
-				units=Amount(-qt.amount,self.currency)
-			)
-			meta = new_metadata(self.account_name, 0)
-			nprc=qt.price
-			if qt.quantity > 0:
-				nprc = abs(qt.amount/qt.quantity)
-				if abs(qt.quantity*(nprc-qt.price)) > 0.0025: # FIXME
-					meta['rounding']="Price was {0}".format(qt.price)
-			postings[1]=p1._replace(
-				account = ":".join([account_name, sec_account]),
-				units=Amount(qt.quantity,sec_currency),
-#				cost=Cost(nprc,self.currency,dt.date(qt.date),""),
-				price = Amount(nprc,self.currency),
-				meta=meta,
-			)
-		elif qt.action=='ReinvInt': 
-			postings[0]=p0._replace(
-				account = ":".join([account_name,"IntInc"]),
-				units=Amount(-qt.amount,self.currency)
-			)
-			postings[1]=p1._replace(
-				account = ":".join(account_name, "Cash"),
-				units=Amount(qt.quantity,sec_currency),
-			)
-		elif qt.action=='ReinvSh': 
-			pass
-		elif qt.action=='Reprice': 
-			pass
-		elif qt.action in ['XIn','XOut']: # Cash in or out
-			amt = Decimal('0') # qt.amount may be empty!
-			if qt.amount:
-				amt = qt.amount
-			if qt.action=='XOut':
-				amt = -amt
-			postings[0]=p0._replace(
-				account = ":".join([account_name, "Cash"]),
-				units=Amount(amt,self.currency),
-			)
-			postings[1]=p1._replace(
-				account = ":".join([account_name,"Transfer"]),
-				units = Amount(-amt,self.currency)
-			)
-		elif qt.action=='XOut': 
-			pass
-		elif qt.action=='MiscExpX': 
-			pass
-		elif qt.action=='MiscIncX': 
-			pass
-		elif qt.action=='MargInt': 
-			pass
-		elif qt.action=='MargIntX': 
-			pass
-		elif qt.action=='RtrnCap': 
-			pass
-		elif qt.action=='RtrnCapX': 
-			pass
-		elif qt.action=='StkSplit': 
-			pass
-		# just remove shares - manually fix where they go later!
-		# looks like sale for transfer between e.g. share classes 
-		elif qt.action=='ShrsOut': 
-			amt = Decimal('0') # qt.amount may be empty!
-			if qt.amount:
-				amt = qt.amount
-			price = Decimal('0')
-			if qt.price:
-				price = qt.price
-			postings[0]=p0._replace(
-				account = ":".join([account_name, sec_account]),
-				units=Amount(-qt.quantity,sec_currency),
-#				cost=Cost(price,self.currency,dt.date(qt.date),""),
-				price = Amount(price,self.currency),
-			)
-			if qt.memo and "TRANSFER" in qt.memo.upper():
-				acct="Transfer"
-			else:
-				acct="Cash"
-			postings[1]=p1._replace(
-				account = ":".join([account_name,acct]),
-				units = Amount(amt,self.currency)
-			)
-		# not an official Qif action but still used...
-		elif qt.action=='Cash':
-			# might be goodwill, witholding, or some such
-			# let regex assignment fill in later
-			amt=Decimal(0)
-			if qt.amount:
-				amt=qt.amount
-			postings[0]=p0._replace(
-				account = account_name + ":Cash",
-				units = Amount(amt,self.currency)
-			)
-			postings.remove(p1)
-		else:
-			sys.stderr.write("Unknown QIF investment action {0}\n".format(qt.action))
-	
-		return(postings)
