@@ -3,7 +3,7 @@
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
 from beancount.core.number import MISSING
-import beanjmw.importers.importer_shared as impsh
+import beanjmw.importers.importer_shared as impshare
 
 import os,sys, re
 
@@ -131,7 +131,7 @@ class Importer(ImporterProtocol):
 		# map to universal rows
 		transactions = self.map_universal_transactions(import_table)
 		# turn into Beancount transactions
-		entries = impsh.get_transactions(transactions, self.account_name, self.default_payee, self.currency, self.account_currency)
+		entries = impshare.get_transactions(transactions, self.account_name, self.default_payee, self.currency, self.account_currency)
 		return(entries)
 		
 		entries = self.get_transactions(import_table)
@@ -164,7 +164,6 @@ class Importer(ImporterProtocol):
           The tidied up, new filename to store it as.
 		"""
 		init_name=os.path.split(file.name)[1]
-#		ds=dt.date(dt.fromtimestamp(os.path.getmtime(file.name))).isoformat()
 		return(init_name)
 
 	def file_date(self, file):
@@ -210,266 +209,18 @@ class Importer(ImporterProtocol):
 		uentries = []
 
 		for row in rows:
-			urd = impsh.map_to_dict(etrade_map_cols.values(), row)
+			urd = impshare.map_to_dict(etrade_map_cols.values(), row)
 			# Etrade specific date
 			urd['date']=dt.date(dt.strptime(urd['date'],'%m/%d/%y'))
-			impsh.build_narration(urd)
+			impshare.build_narration(urd)
 			#  make sure we have a sensible symbol
 			if len(urd['symbol']) == 0 or '#' in urd['symbol']:
 				urd['symbol']=self.currency 
-			impsh.decimalify(urd)
+			impshare.decimalify(urd)
 			self.map_actions(urd)
-			uentries.append(impsh.UniRow(**urd))
+			uentries.append(impshare.UniRow(**urd))
 
 		return(uentries)
-
-	def get_transactions(self,table):
-		entries=[]
-		for fr in map(EtradeRow._make,table): 
-			meta=new_metadata(self.account_name, 0)
-			# KLUDGE: Fix amounts without decimal point
-			nfr=fr._replace() # make a copy
-			if not '.' in fr.Amount:
-				namt = fr.Amount+".00"
-				nfr = fr._replace(Amount=namt)
-			# KLUDGE: Actual date may be in action!
-			# DON'T replace date - the record date is used in the scrape file
-			# Dedup won't work otherwise
-			if 'RECORD' in fr.Description:
-				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{2}",fr.Description)
-#				nfr = nfr._replace(TransactionDate = dm[0])
-			# FIXME: this assumes there is another ReinvDiv record
-			# Note that we lose the S,L/T Cap Gain in the Description field!
-			# That is, each Dividend just looks like it came from Div
-			# Going forward, this is only needed for deduplication of qif
-			# ReinvDiv records
-			if fr.TransactionType=="Dividend" and Decimal(fr.Quantity)==0:
-				sys.stderr.write("Skipping dividend {0} {1}\n".format(fr.TransactionDate,fr.Symbol))
-				continue
-			# filter out transactions that are to be ignored
-			if "IGNORE" in fr.Description:
-				continue
-			narration_str=" / ".join([fr.Description,fr.TransactionType])
-			tn=Transaction(
-				meta=meta,
-				date=self.get_trn_date(nfr),
-				flag="*",
-				payee="Etrade",
-				narration=narration_str,
-				tags=EMPTY_SET,
-				links=EMPTY_SET,
-				postings=self.generate_investment_postings(nfr),
-			)
-			entries.append(tn)
-
-		return(entries)
-
-	def get_trn_date(self,fr):
-		return(dt.date(dt.strptime(fr.TransactionDate,'%m/%d/%y')))
-
-	def generate_investment_postings(self,fr):
-		postings=[]
-
-		# try to find investment action
-		# switch to use QIF format names
-		# TODO: Re-use code in qif importer
-		etrade_action=None
-		if fr.TransactionType in transaction_types:
-			etrade_action=fr.TransactionType
-
-		# unsure what we should do here so bail
-		if not etrade_action:
-			sys.stderr.write("Unknown inv action: {0} in {1}\n".format(fr.TransactionType,fr))
-			return(postings)
-	
-		# set defaults for two generic postings (p0, p1)
-		symbol=self.currency # default to this
-		if len(fr.Symbol) > 0 and not '#' in fr.Symbol:
-			symbol = fr.Symbol
-		sec_currency=symbol
-		sec_account=symbol
-		acct = ":".join([self.account_name, sec_account])
-		# open account with this currency
-		self.account_currency[acct]=["USD",sec_currency]
-		qty = Decimal('0')
-		if len(fr.Quantity)>0:
-			qty = Decimal(fr.Quantity)
-		postings.append(
-			Posting(
-				account = self.account_name,
-				units=Amount(qty,sec_currency),
-				cost=None,
-				price=None,
-				flag=None,
-				meta={}
-			)
-		)
-		postings.append(
-			Posting(
-				account = self.account_name + ":Cash",
-				units=Amount(-qty,sec_currency),
-				cost=None,
-				price=None,
-				flag=None,
-				meta={}
-			)
-		)
-		# for convenience
-		p0=postings[0]
-		p1=postings[1] 
-	
-		# deal with each type of investment action:
-		if etrade_action == 'Bought':
-			acct = ":".join([self.account_name, sec_account])
-			meta=new_metadata(acct, 0)
-			amt=Decimal(0)
-			if len(fr.Amount)>0:
-				amt=Decimal(fr.Amount)
-			qty=Decimal(0.000000001)
-			if fr.Quantity:
-				qty=Decimal(fr.Quantity)
-			prc=Decimal(0)
-			if len(fr.Price)>0:
-				prc=Decimal(fr.Price)
-				tprc=abs(amt/qty)
-				if abs(qty*(tprc-prc)) > 0.0025: # exceeds tolerance
-					meta["rounding"]="Price was {0}".format(prc)
-					prc=tprc
-			postings[0]=p0._replace(
-				account = acct,
-				units=Amount(Decimal(fr.Quantity),sec_currency),
-				cost = Cost(prc,self.currency,self.get_trn_date(fr),""),
-				price = Amount(prc,self.currency),
-				meta = meta,
-			)
-			aname='Cash'
-			# shares in came from a share exchange somewhere else
-			if etrade_action == 'ShrsIn': # KLUDGE
-				aname = 'Transfer'
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name,aname]),
-				units = Amount(-abs(amt),self.currency)
-			)
-		elif etrade_action=='Sold': 
-			commission=Decimal(0)
-			if len(fr.Commission)>0:
-				commission=Decimal(fr.Commission)
-				postings.append(
-					Posting(
-						account = self.account_name.replace('Assets','Expenses') + ":Commission",
-						units=Amount(commission,self.currency),
-						cost=None,
-						price=None,
-						flag=None,
-						meta={}
-					)
-				)
-			total_cost=commission
-			if len(fr.Amount)>0:
-				total_cost=Decimal(fr.Amount)+commission
-			prc=Decimal(0)
-			if len(fr.Price)>0:
-				prc=Decimal(fr.Price)
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name, sec_account]),
-				units=Amount(Decimal(fr.Quantity),sec_currency),
-				cost=Cost(None,None,None,None), 
-				price = Amount(prc,self.currency),
-			)
-			postings[1]=p1._replace(
-				account = self.account_name + ":Cash",
-				units = Amount(total_cost-commission,self.currency)
-			)
-			interp_acct = self.account_name.replace('Assets','Income')+":Gains"
-			self.account_currency[interp_acct]=None
-			# interpolated posting
-			postings.append(
-				Posting(
-					account = interp_acct,
-#					units = NoneType(),
-					units = None,
-					cost = None,
-					price = None,
-					flag = None,
-					meta={'__residual__':True},
-				)
-			)
-		elif etrade_action == 'Dividend':
-			# might be Long, Short, or reinvest
-			etrade_div_action='Div'
-			# FIXME: this is broken at the moment 
-			# Anything other than REINV is filtered before we get here
-			for tok in investment_actions:
-				if tok in fr.Description:
-					etrade_div_action=investment_actions[tok]	
-			# Check for 2020 and earlier transactions
-			# Here, Dividend has negative Amount and positive Quantity
-			# means it was a "Buy" i.e. a reinvest
-#			if Decimal(fr.Quantity)>0 and Decimal(fr.Amount) < 0:
-#				etrade_div_action = 'Div'
-			price_amt = None
-			account = ":".join([self.account_name,sec_account])
-			units=Amount(Decimal(fr.Quantity),sec_currency)
-			if fr.Quantity and len(fr.Quantity) > 0:
-				prc = abs(Decimal(fr.Amount)/Decimal(fr.Quantity))
-				price_amt = Amount(prc,self.currency)
-			postings[0]=p0._replace(
-				account = account,
-				units = units,
- 				price = price_amt,
-			)
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),sec_currency,"Div"]),
-				units = Amount(Decimal(fr.Amount),self.currency)
-			)
-		elif etrade_action == 'Interest':
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),"IntInc"]),
-				units=Amount(-Decimal(fr.Amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = self.account_name + ":Cash",
-				units = Amount(Decimal(fr.Amount),self.currency)
-			)
-		elif etrade_action == 'Fee':
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Expenses'),etrade_action]),
-				units=Amount(-Decimal(fr.Amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = self.account_name + ":Cash",
-				units = Amount(Decimal(fr.Amount),self.currency)
-			)
-		elif etrade_action in ['Transfer','Wire','Direct Debit']: 
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name,"Cash"]),
-				units=Amount(Decimal(fr.Amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name, "Transfer"]),
-				units=Amount(-Decimal(fr.Amount),sec_currency),
-			)
-		# Adjustment just removes or adds shares at 0 cost - basis 
-		# needs to be entered manually (maybe a way to get this?)
-		elif etrade_action in ['Adjustment','Other','Reorganization']:
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name,sec_currency]),
-				units=Amount(Decimal(fr.Quantity),sec_currency),
-				price = Amount(Decimal(0),self.currency),
-			)
-			meta=new_metadata(self.account_name, 0)
-			meta["fixme"] = "Posting may need cost basis"
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name, "Adjustment"]),
-				units=Amount(Decimal(0),self.currency),
-				price = Amount(Decimal(0),self.currency),
-				meta = meta,
-			)
-		else:
-			sys.stderr.write("Unknown investment action {0}\n".format(etrade_action))
-	
-		return(postings)
-
 
 	def create_table(self,lines):
 		""" Returns a list of (mostly) unparsed string tokens
