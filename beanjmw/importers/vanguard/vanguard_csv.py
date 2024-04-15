@@ -7,14 +7,11 @@ from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SE
 from beancount.core.number import MISSING
 from beanjmw.importers.importer_shared import unquote
 
-import beanjmw.importers.importer_shared as impsh
+import beanjmw.importers.importer_shared as impshare
 
 import os,sys, re
 
 from datetime import datetime as dt
-
-# remove these chars as Beancount accounts can't have them
-quicken_category_remove=[' ','\'','&','-','+','.']
 
 action_map={
 'Buy':'Buy',
@@ -29,13 +26,6 @@ action_map={
 'Reinvestment (ST gain)':'ReinvSh'
 }
 
-transaction_acct={
-'Dividend':'Div', 
-'Reinvestment':'Div', 
-'Reinvestment (LT gain)':'CGLong',
-'Reinvestment (ST gain)':'CGShort',
-}
-
 skip_zeros=[
 'Transfer (incoming)',
 'Dividend',
@@ -44,10 +34,6 @@ skip_zeros=[
 ]
 
 default_open_date='2000-01-01'
-
-vanguard_cols = [
-'SettlementDate','TradeDate','Symbol','Name','TransactionType','Quantity','Price','Amount',
-]
 
 vanguard_map = {
 'SettlementDate':'settlementDate',
@@ -60,8 +46,7 @@ vanguard_map = {
 'Amount':'amount',
 }
 
-from collections import namedtuple
-VanguardRow = namedtuple('VanguardRow',vanguard_cols)
+vanguard_cols = list(vanguard_map.keys())
 
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD',account_number=None):
@@ -118,14 +103,7 @@ class Importer(ImporterProtocol):
 			return(entries)
 		import_table=self.create_table(lines)
 		uentries = self.map_universal_table(import_table)
-		entries = impsh.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency)
-
-#		entries = self.get_transactions(import_table)
-
-		# add open directives; some may be removed in dedup
-#		open_date=dt.date(dt.fromisoformat(default_open_date))
-#		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,["USD",c],Booking("FIFO")) for a,c in self.account_currency.items()]	
-#		return(open_entries + entries)
+		entries = impshare.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency)
 		return(entries)
 
 	def file_account(self, file):
@@ -151,7 +129,6 @@ class Importer(ImporterProtocol):
           The tidied up, new filename to store it as.
 		"""
 		init_name=os.path.split(file.name)[1]
-#		ds=dt.date(dt.fromtimestamp(os.path.getmtime(file.name))).isoformat()
 		return(init_name)
 
 	def file_date(self, file):
@@ -169,7 +146,7 @@ class Importer(ImporterProtocol):
 	def map_universal_table(self,table):
 		uentries=[]
 		for tr in table:
-			urd = impsh.UniRow()._asdict()
+			urd = impshare.UniRow()._asdict()
 			for key,val in zip(vanguard_map.values(),tr):
 				if key in urd:
 					urd[key]=val
@@ -184,217 +161,9 @@ class Importer(ImporterProtocol):
 			if urd['action']=='Transfer' or (urd['type'] in skip_zeros and len(urd['price'])==0):
 				sys.stderr.write("Skipping {0} {1} {2}\n".format(urd['type'],urd['date'],urd['symbol']))
 				continue
-			impsh.decimalify(urd)
-			uentries.append(impsh.UniRow(**urd))
+			impshare.decimalify(urd)
+			uentries.append(impshare.UniRow(**urd))
 		return(uentries)
-
-	def get_transactions(self,table):
-		entries=[]
-		for fr in map(VanguardRow._make,table): 
-			meta=new_metadata(self.account_name, 0)
-			# KLUDGE: Fix amounts without decimal point
-			nfr=fr._replace() # make a copy
-			if not '.' in fr.Amount:
-				namt = fr.Amount+".00"
-				nfr = fr._replace(Amount=namt)
-			# Note: this assumes there is another record for reinvesting
-			if fr.TransactionType=='Transfer' or (fr.TransactionType in skip_zeros and len(fr.Price)==0):
-				sys.stderr.write("Skipping {0} {1} {2}\n".format(fr.TransactionType,fr.TradeDate,fr.Symbol))
-				continue
-			# filter out transactions that are to be ignored
-			if "IGNORE" in fr.Name:
-				continue
-			narration_str=" / ".join([fr.Name,fr.TransactionType])
-			tn=Transaction(
-				meta=meta,
-				date=dt.date(dt.strptime(nfr.TradeDate,'%m/%d/%Y')),
-				flag="*",
-				payee="Vanguard csv",
-				narration=narration_str,
-				tags=EMPTY_SET,
-				links=EMPTY_SET,
-				postings=self.generate_investment_postings(nfr),
-			)
-			entries.append(tn)
-
-		return(entries)
-
-	def generate_investment_postings(self,fr):
-		postings=[]
-
-		# try to find investment action
-		# switch to use QIF format names
-		# TODO: Re-use code in qif importer
-		vanguard_action=None
-		if fr.TransactionType in action_map:
-			vanguard_action=fr.TransactionType
-
-		# unsure what we should do here so bail
-		if not vanguard_action:
-			sys.stderr.write("Unknown inv action: {0} in {1}\n".format(fr.TransactionType,fr))
-			return(postings)
-	
-		# set defaults for two generic postings (p0, p1)
-		symbol=self.currency # default to this
-		if len(fr.Symbol) > 0 and not '#' in fr.Symbol:
-			symbol = fr.Symbol
-		sec_currency=symbol
-		sec_account=symbol
-		acct = ":".join([self.account_name, sec_account])
-		# open account with this currency
-		self.account_currency[acct]=sec_currency
-		qty = Decimal('0')
-		if len(fr.Quantity)>0:
-			qty = Decimal(fr.Quantity)
-		postings.append(
-			Posting(
-				account = self.account_name,
-				units=Amount(qty,sec_currency),
-				cost=None,
-				price=None,
-				flag=None,
-				meta={}
-			)
-		)
-		postings.append(
-			Posting(
-				account = self.account_name + ":Cash",
-				units=Amount(-qty,sec_currency),
-				cost=None,
-				price=None,
-				flag=None,
-				meta={}
-			)
-		)
-		# for convenience
-		p0=postings[0]
-		p1=postings[1] 
-	
-		# deal with each type of investment action:
-		if vanguard_action in ['Buy','Conversion']:
-			acct = ":".join([self.account_name, sec_account])
-			meta=new_metadata(acct, 0)
-			amt=Decimal(0)
-			if len(fr.Amount)>0:
-				amt=Decimal(fr.Amount)
-			qty=Decimal(0.000000001)
-			if fr.Quantity:
-				qty=Decimal(fr.Quantity)
-			prc=Decimal('0.00')
-			if len(fr.Price)>0:
-				prc=Decimal(fr.Price)
-				tprc=abs(amt/qty)
-				if abs(qty*(tprc-prc)) > 0.0025: # exceeds tolerance
-					meta["rounding"]="Price was {0}".format(prc)
-					prc=tprc
-			postings[0]=p0._replace(
-				account = acct,
-				units=Amount(Decimal(fr.Quantity),sec_currency),
-				price = Amount(prc,self.currency),
-				meta = meta,
-			)
-			aname='Cash'
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name,aname]),
-				units = Amount(amt,self.currency)
-			)
-		elif vanguard_action=='Sold': 
-			commission=Decimal(0)
-			if len(fr.Commission)>0:
-				commission=Decimal(fr.Commission)
-				postings.append(
-					Posting(
-						account = self.account_name.replace('Assets','Expenses') + ":Commission",
-						units=Amount(commission,self.currency),
-						cost=None,
-						price=None,
-						flag=None,
-						meta={}
-					)
-				)
-			total_cost=commission
-			if len(fr.Amount)>0:
-				total_cost=Decimal(fr.Amount)+commission
-			prc=Decimal(0)
-			if len(fr.Price)>0:
-				prc=Decimal(fr.Price)
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name, sec_account]),
-				units=Amount(Decimal(fr.Quantity),sec_currency),
-		#		cost=None, # let Beancount FIFO booking rule take care
-				price = Amount(prc,self.currency),
-			)
-			postings[1]=p1._replace(
-				account = self.account_name + ":Cash",
-				units = Amount(total_cost-commission,self.currency)
-			)
-			# interpolated posting
-			postings.append(
-				Posting(
-					account = self.account_name.replace('Assets','Income')+":PnL",
-					units = NoneType(),
-					cost = None,
-					price = None,
-					flag = None,
-					meta=None,
-				)
-			)
-		elif vanguard_action in transaction_acct:
-			from_acct=transaction_acct[vanguard_action]
-			price_amt = None
-			account = ":".join([self.account_name,sec_account])
-			units=Amount(Decimal(fr.Quantity),sec_currency)
-			if fr.Quantity and len(fr.Quantity) > 0:
-				prc = abs(Decimal(fr.Amount)/Decimal(fr.Quantity))
-				price_amt = Amount(prc,self.currency)
-			postings[0]=p0._replace(
-				account = account,
-				units = units,
- 				price = price_amt,
-			)
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name.replace("Assets","Income"),sec_currency,from_acct]),
-				units = Amount(Decimal(fr.Amount),self.currency)
-			)
-		elif vanguard_action == 'Interest':
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Income'),"IntInc"]),
-				units=Amount(-Decimal(fr.Amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = self.account_name + ":Cash",
-				units = Amount(Decimal(fr.Amount),self.currency)
-			)
-		elif vanguard_action == 'Fee':
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name.replace('Assets','Expenses'),vanguard_action]),
-				units=Amount(-Decimal(fr.Amount),self.currency)
-			)
-			postings[1]=p1._replace(
-				account = self.account_name + ":Cash",
-				units = Amount(Decimal(fr.Amount),self.currency)
-			)
-		# Adjustment just removes or adds shares at 0 cost - basis 
-		# needs to be entered manually (maybe a way to get this?)
-		elif vanguard_action in ['Adjustment','Other','Reorganization']:
-			postings[0]=p0._replace(
-				account = ":".join([self.account_name,sec_currency]),
-				units=Amount(Decimal(fr.Quantity),sec_currency),
-				price = Amount(Decimal(0),self.currency),
-			)
-			meta=new_metadata(self.account_name, 0)
-			meta["fixme"] = "Posting may need cost basis"
-			postings[1]=p1._replace(
-				account = ":".join([self.account_name, "Adjustment"]),
-				units=Amount(Decimal(0),self.currency),
-				price = Amount(Decimal(0),self.currency),
-				meta = meta,
-			)
-		else:
-			sys.stderr.write("Unknown investment action {0}\n".format(vanguard_action))
-	
-		return(postings)
-
 
 	def create_table(self,lines):
 		""" Returns a list of (mostly) unparsed string tokens
