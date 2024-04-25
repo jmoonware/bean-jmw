@@ -28,12 +28,15 @@ class Importer(ImporterProtocol):
 			Returns:
 				A boolean, true if this importer can handle this file.
 		"""
+		ret = False
 		# check if this is a beancount ledger using load_file
-		entries, errs, config = load_file(file.name)
-		if len(errs) > 0:
-			return False
-		else:
-			 return True
+		file_ext = os.path.splitext(file.name)[1]
+		if '.bc' == file_ext or '.beancount' == file_ext or '.txt' == file_ext:
+			entries, errs, config = load_file(file.name)
+			if len(errs) == 0:
+				 ret = True
+
+		return ret
 		
 	def extract(self, file, existing_entries=None):
 		"""Extract transactions from a file.

@@ -41,6 +41,7 @@ CONFIG = accts.CONFIG
 
 # Override the header on extracted text (if desired).
 extract.HEADER = ';; -*- mode: org; mode: beancount; coding: utf-8; -*-\n'
+extract.HEADER = ''
 
 def filter_entries(extracted_entries_list):
     # This ugly little thing is used to reconstruct accounts associated with 
@@ -135,7 +136,7 @@ if __name__=='__main__':
 		sys.stderr.write("Command line error - {0}\n".format(ex))
 		sys.exit(1)
 
-	if hasattr(accts, "auto_open"):
+	if hasattr(accts, "auto_open") and "extract" in sys.argv:
 		print('plugin "beancount.plugins.auto"')
 		# TODO: make booking method conifguable
 		print('option "booking_method" "FIFO"')
