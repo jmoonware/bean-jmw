@@ -43,7 +43,7 @@ def load_comments(f):
 					k=toks[0][1:-1] # remove quotes
 				retc[k]=pc[1]
 
-	sys.stderr.write("Found {0} comments\n".format(len(retc)))
+	sys.stderr.write("{0}: Found {1} comments\n".format(clargs.existing,len(retc)))
 	return(retc)
 
 with open(clargs.existing,'r') as f:
@@ -77,6 +77,10 @@ for oe in override_entries:
 		if "UNASSIGNED" in ex_entries[oe]:
 			ex_entries[oe]=override_entries[oe] 
 
+if ex_entries == None or len(ex_entries)==0:
+	sys.stderr.write("{0}: No entries\n".format(clargs.existing))
+	sys.exit()
+	
 sorted_entries=OrderedDict(sorted(ex_entries.items()))
 
 # check if it is a check number or regex string yaml file
@@ -151,10 +155,13 @@ else:
 		comment=""
 		if k in comments_dict and v=="UNASSIGNED":
 			comment=' # '+comments_dict[k]
-		fk=k
+		fk = k
+		fv = ""
+		if v != None:
+			fv = v
 		if type(k) == str:
 			for rc in replace_chars:
 				fk=fk.replace(rc,".")
-		s_out = quotes + str(fk) + quotes + ":" + " "*nspace + v + comment
+		s_out = quotes + str(fk) + quotes + ":" + " "*nspace + fv + comment
 		print(s_out)
 

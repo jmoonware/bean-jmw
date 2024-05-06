@@ -61,12 +61,19 @@ ap.add_argument("--remove",required=False,help="Remove any undeleted safety file
 ap.add_argument("--test",required=False,help="Just print commands to be executed, but don't actually do anything",default=False,action="store_true")
 ap.add_argument("--force",required=False,help="Force file update even if bean-check fails",default=False,action="store_true")
 ap.add_argument("--split",required=False,help="Split this file into sub-ledgers using ledgersbyacct in accts.py",default='')
+ap.add_argument("--last",required=False,help="Prints latest date in each ledger (useful to know when downloading new files",default=False,action='store_true')
 
 clargs = ap.parse_args(sys.argv[1:])
 
 def is_nothing(fn):
-	with open(fn) as f:
-		lines=f.readlines()
+	if os.path.isfile(fn):
+		with open(fn) as f:
+			lines=f.readlines()
+	else:
+		sys.stderr.write(bcolors.WARNING + 
+			"Warning: didn't find {0}".format(fn) + 
+			bcolors.ENDC+"\n")
+		return(True)
 	nothing = False
 	for l in lines:
 		if "Nothing to do" in l:
@@ -130,6 +137,15 @@ def run_command(com):
 			sys.stderr.write(bcolors.FAIL + "Error: run_command: {0}: {1}".format(com,str(ex))+bcolors.ENDC)
 			error = str(ex)
 	return(error)
+
+def print_last():
+	for acct in ledgersbyacct:
+		epath, new_path, rc_path, bpath = get_filenames(ledgersbyacct[acct])
+		if os.path.isfile(epath):
+			com = "bean-query {0} 'select last(date)'".format(epath)
+			sys.stderr.write(bcolors.OKBLUE + "Latest record for {0}:".format(epath) + bcolors.ENDC + "\n")
+			run_command(com)
+			sys.stderr.write('\n')
 
 def extract_files():
 	make_path(staging_path)
@@ -446,4 +462,6 @@ if clargs.remove and not clargs.update:
 	remove_marked()
 if len(clargs.split) > 0:
 	split_ledger()
+if clargs.last:
+	print_last()
 

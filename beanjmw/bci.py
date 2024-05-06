@@ -2,6 +2,7 @@
 # bci.py: custom script for beancount to ingest dowloaded files
 #
 import sys
+import argparse
 from os import path
 import os, re
 sys.path.insert(0, path.abspath(os.curdir))
@@ -123,23 +124,27 @@ def process_extracted_entries(extracted_entries_list, ledger_entries):
     return deduped_entries_list
 
 if __name__=='__main__':
-	# Invoke the script.
-	# Capture and remove command-line -a account_filter args
-	try:
-		if "-a" in sys.argv:
+	
+	# some clean-ups for extract command
+	if "extract" in sys.argv:
+		parser = argparse.ArgumentParser()
+		extract.add_arguments(parser)
+		parser.add_argument('-a',help='Limit records to this account (useful with split ledgers',required=False,default=None)
+		parser.add_argument('extract')
+		clargs = parser.parse_args(sys.argv[1:])
+		if clargs.a:
+			account_filter=clargs.a
+			# remove these toks from argv list to pass on to ingest
 			idx=sys.argv.index("-a")
-			account_filter=sys.argv[idx+1]
 			del sys.argv[idx]
 			del sys.argv[idx]
 			sys.stderr.write("Using account filter {0}\n".format(account_filter))
-	except Exception as ex:
-		sys.stderr.write("Command line error - {0}\n".format(ex))
-		sys.exit(1)
-
-	if hasattr(accts, "auto_open") and "extract" in sys.argv:
-		print('plugin "beancount.plugins.auto"')
-		# TODO: make booking method conifguable
-		print('option "booking_method" "FIFO"')
+		# emit to stdout some directives if needed
+		if hasattr(clargs, "existing") and clargs.existing == None: 
+			if hasattr(accts, "auto_open"): 
+				print('plugin "beancount.plugins.auto"')
+			# TODO: make booking method configurable
+			print('option "booking_method" "FIFO"')
 
 	EntryPrinter.META_IGNORE.add('__residual__')
 	scripts_utils.ingest(CONFIG, hooks=[process_extracted_entries])
