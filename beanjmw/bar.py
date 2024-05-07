@@ -95,6 +95,10 @@ for acct, symbol, units, holding_amt in zip(holdings['Account'], holdings['Curre
 
 # Now generate some reporting!
 
+if len(by_account)==0: # nothing to report!
+	sys.stderr.write("No accounts in asset list\n")
+	sys.exit()
+
 ba_tot=sum([v for v in by_account.values()])
 acct_len=max([int(len(k)) for k in by_account])
 fmt="{0:<"+str(acct_len)+"s}\t{1:8.2f}\t{2:3.2f}"

@@ -54,7 +54,7 @@ ap = argparse.ArgumentParser()
 
 ap.add_argument("-c","--check",required=False,help="Only run bean-check",default=False,action="store_true")
 ap.add_argument("-e","--extract",required=False,help="Extract latest downloads, make release candidates, check",default=False,action="store_true")
-ap.add_argument("--clean",required=False,help="Clean up yaml files, update chart of accounts",default=False,action="store_true")
+ap.add_argument("--clean",required=False,help="Clean up yaml files",default=False,action="store_true")
 ap.add_argument("-v","--verbose",required=False,help="Print all details",default=False,action="store_true")
 ap.add_argument("--update",required=False,help="Backup orig ledger, move orig to delete file, move release candidate to orig",default=False,action="store_true")
 ap.add_argument("--remove",required=False,help="Remove any undeleted safety files",default=False,action="store_true")
@@ -452,6 +452,8 @@ def split_ledger():
 
 ##### Start of script
 
+# typical workflow is extract -> update -> clean -> remove
+# probably should combine clean and remove
 if clargs.extract or clargs.check:
 	extract_files()
 if clargs.update:
@@ -460,6 +462,8 @@ if clargs.clean:
 	clean_yaml()
 if clargs.remove and not clargs.update:
 	remove_marked()
+
+# some other useful functions
 if len(clargs.split) > 0:
 	split_ledger()
 if clargs.last:
