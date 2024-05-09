@@ -268,7 +268,7 @@ by_holding={}
 
 # attempt to reduce near redundancies
 clean_holdings='\t'
-clean_holdings_list=[]
+clean_holdings_list=[clean_holdings]
 
 equivalent_suffix = [' INC',' & CO',' CO ',' CO$',' CO-',' CORP',' LLC',' LTD',' PLC',' AG ',' AG$',' COMPAN']
 

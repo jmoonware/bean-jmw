@@ -43,12 +43,6 @@ class bcolors:
 
 delete_suffix = ".deleteme"
 
-try:
-	from accts import ledgersbyacct
-except ImportError as ie:
-	sys.stderr.write(bcolors.FAIL + "Can't import ledgersbyacct from accts: {0}\n".format(ie) + bcolors.ENDC)
-	sys.exit(1)
-
 
 ap = argparse.ArgumentParser()
 
@@ -64,6 +58,12 @@ ap.add_argument("--split",required=False,help="Split this file into sub-ledgers 
 ap.add_argument("--last",required=False,help="Prints latest date in each ledger (useful to know when downloading new files",default=False,action='store_true')
 
 clargs = ap.parse_args(sys.argv[1:])
+
+try:
+	from accts import ledgersbyacct
+except ImportError as ie:
+	sys.stderr.write(bcolors.FAIL + "Can't import ledgersbyacct from accts: {0}\n".format(ie) + bcolors.ENDC)
+	sys.exit(1)
 
 def is_nothing(fn):
 	if os.path.isfile(fn):
@@ -433,7 +433,7 @@ def split_ledger():
 		printer.print_entries(common,file=f)
 
 	for acct in ledgersbyacct:
-		with open(os.path.join(staging_path,ledgersbyacct[acct]+".bc"),'w') as f:
+		with open(os.path.join(staging_path,ledgersbyacct[acct]+"_rc.bc"),'w') as f:
 			f.write('plugin "beancount.plugins.auto"\n')	
 			f.write('option "booking_method" "FIFO"\n')	
 			f.write('include "common.bc"\n\n')	

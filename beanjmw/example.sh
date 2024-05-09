@@ -14,6 +14,7 @@ BCR="python -m beanjmw.bcr"
 BAR="python -m beanjmw.bar"
 PNW="python -m beanjmw.plot_networth"
 PT="python -m beanjmw.plot_things"
+STAGE="python -m beanjmw.stage"
 
 REPORT_YEARS=7
 
@@ -21,7 +22,7 @@ REPORT_YEARS=7
 END_YEAR=$((`date +"%Y"`-1))
 START_YEAR=$((END_YEAR-REPORT_YEARS))
 
-# kludge to find where the accts_example.py file is installed
+# kludge to find where the example files are installed
 BEANJMW_PATH=`python -c "import beanjmw; print(beanjmw.__path__[0])"`
 
 # create the directory structure 
@@ -45,8 +46,10 @@ bean-example --date-begin $START_YEAR-01-01 -o $LEDGER
 # based on the category (but since Quicken account names follow different
 # rules, the resulting accounts in yaml rules files may require some tlc.)
 #
+# We are also going to append the ledgersbyacct dict to this file
+# for use in the staging script at the end of this example
 cd downloads
-cp $BEANJMW_PATH/example_accts.py accts.py
+cat $BEANJMW_PATH/example_accts.py $BEANJMW_PATH/example_ledgers.py > accts.py
 # make a copy of the example ledger in the download folder
 # Normally, this is where we download new transactions
 # For the example, we will "pretend" this ledger is the new download
@@ -174,4 +177,62 @@ do
  echo Plotting $t
  $PT -f ../$LEDGER -og $t.png -a $t$ -sd $START_YEAR-01-01 -ed $END_YEAR-12-31 -b -cb 
 done
+
+# now exercise splitting the ledger and per-ledger importing
+# via the staging script
+cd ../downloads
+
+# Create the split ledgers from the ledgersbyacct dict in accts 
+
+$STAGE --split ../$LEDGER
+
+# this checks the ledgers for errors, then moves them up to the main ledger
+# dir if everything passes
+
+$STAGE --update --remove
+
+# copy the common file upward manually for now
+cp ../staging/common.bc ..
+
+# Now that we have split ledgers, let's import a downloaded example
+# Normally you would download latest transactions from various institutions
+# before extraction - here we are going to copy over an artifically 
+# constructed example file
+
+cp $BEANJMW_PATH/slate_download1234.csv .
+
+# extract the new transactions (the above file artifically sums to zero
+# so as to not throw off any balances)
+
+$STAGE --extract
+
+# This just runs bean-check on the release candidates
+
+$STAGE --check -v
+
+#
+# Normally one would have to edit the various yaml/*_unassigned.yaml
+# files (updating check number to payee file for new checks, and 
+# assigning any new rules as needed) and appending the new rules to the 
+# existing appropriate corresponding .yaml files
+#
+# Once the new yaml files are complete, then run --extract again until
+# there are no errors
+#
+# Occasionally the balance assertions will fail as well (because the
+# dates are off by a day usually) so the release candidates may need to be
+# hand-edited to fix this
+#
+# '--update' checks that the extracted "release candidates" are valid, 
+# backs up the original ledgers, moves the rc files to the current 
+# ledger dir, then deletes any intermediate files
+#
+
+$STAGE --update --remove
+
+# This backs up the yaml files, cleans sorts/simplifies the rules
+# and deletes any intermediates
+
+$STAGE --clean --remove
+
 
