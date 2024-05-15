@@ -48,13 +48,14 @@ map_reinv={
 
 # call this from each importer
 
-def get_transactions(transactions,account_name,default_payee,currency,account_currency):
+def get_transactions(transactions,account_name,default_payee,currency,account_currency,cash_acct=''):
 	''' Arguments: 
 			transactions: list of universal transaction named tuples
 			account_name: accout to extract to
 			default_payee: String to add to payee
 			currency: currency for account in account_name (usually USD)
 			account_currency: dict of currencies to open by account name
+			cash_acct: Either zero length string or ':Cash'
 		Return: list of beancount entries
 	'''
 	entries=[]
@@ -70,7 +71,7 @@ def get_transactions(transactions,account_name,default_payee,currency,account_cu
 			narration=unir.narration,
 			tags=EMPTY_SET,
 			links=EMPTY_SET,
-			postings=generate_investment_postings(unir,account_name,currency,account_currency),
+			postings=generate_investment_postings(unir,account_name,currency,account_currency,cash_acct=cash_acct),
 		)
 		entries.append(tn)
 	
@@ -162,7 +163,7 @@ def get_trn_date(uni):
 		trn_date=uni.tradeDate
 	return(trn_date)
 
-def generate_investment_postings(uni,account_name,currency,account_currency):
+def generate_investment_postings(uni,account_name,currency,account_currency,cash_acct=''):
 	postings=[]
 
 	# set defaults for two generic postings (p0, p1)
@@ -176,10 +177,6 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	acct = ":".join([account_name, sec_account])
 	account_currency[acct]=["USD",sec_currency]
 	meta, amt, qty, prc = fix_rounding(uni,acct)
-	if uni.action in ["Debit","Credit"]: # ,"Other"]:
-		acct_tail = ""
-	else:
-		acct_tail = ":Cash"
 	postings.append(
 		Posting(
 			account = account_name,
@@ -192,7 +189,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	)
 	postings.append(
 		Posting(
-			account = account_name + acct_tail,
+			account = account_name + cash_acct,
 			units=Amount(-qty,currency),
 			cost=None,
 			price=None,
@@ -419,7 +416,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency):
 	# Single-leg this for non-investment accounts
 	elif uni.action in ['Debit','Credit','Other','Cash']:
 		postings[0]=p0._replace(
-			account = account_name+acct_tail,
+			account = account_name + cash_acct,
 			units=Amount(amt,currency),
 		)
 		# assign later if we can

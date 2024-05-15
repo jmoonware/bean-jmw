@@ -286,7 +286,7 @@ if clargs.html:
 	print_doc.append("<table>")
 	print_doc.append("<tr><th>Account</th><th>Units</th><th>Currency</th><th>{}</th></tr>".format(report_currency))
 else: # plain text
-	subcatfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2:3.2f}\t{3}\t{4:7.2f}'
+	subcatfmt='\t{0:<'+str(max_account_len)+'s}\t{1:7.2f}\t{2}\t{3:3.2f}\t{4:7.2f}'
 	rowhidefmt='\t\t{0}\t{1}\t{2}'
 	tfmt='{0}\t{1:.2f}\t{2}\t{3:.2f}'
 	print_doc.append("Account\tUnits\tCurrency\t{}".format(report_currency))

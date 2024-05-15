@@ -48,6 +48,7 @@ class Importer(ImporterProtocol):
 		else:
 			self.acct_tok=self.account_name.split(':')[-1]
 			self.acct_tail=self.acct_tok[len(self.acct_tok)-4:] 
+		self.cash_acct = ''
 		self.currency=currency
 		self.account_currency={} # set up on init
 		self.security_ids={} # LUT from uniqueid provided in transaction
@@ -97,6 +98,9 @@ class Importer(ImporterProtocol):
 		# set up securities list if needed
 		if hasattr(ofx, 'security_list'):
 			self.account_currency[":".join([self.account_name,'Cash'])]=[self.currency]
+			# any account with a security_list is a brokerage (not a simple
+			# debit/credit account (e.g. bank or credit card)
+			self.cash_acct = ":Cash"
 			for s in ofx.security_list:
 				if s.ticker and len(s.ticker) > 0:
 					ticker=s.ticker
@@ -109,7 +113,7 @@ class Importer(ImporterProtocol):
 		for ofx_acct in ofx.accounts:
 			if ofx_acct.account_id[-4:]==self.acct_tail:
 				unrs = self.map_universal_table(ofx_acct.statement.transactions)
-				entries = impshare.get_transactions(unrs, self.account_name, self.default_payee, self.currency, self.account_currency)
+				entries = impshare.get_transactions(unrs, self.account_name, self.default_payee, self.currency, self.account_currency, self.cash_acct)
 				balances = self.get_balances(ofx_acct.statement)
 
 		return(entries + balances)

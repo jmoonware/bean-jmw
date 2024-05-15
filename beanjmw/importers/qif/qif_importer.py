@@ -54,6 +54,7 @@ default_open_date='2000-01-01'
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD',account_number=''):
 		self.account_name=account_name
+		self.cash_acct = ''
 		self.currency=currency
 		# TODO: use account number
 		self.account_number=account_number
@@ -149,7 +150,7 @@ class Importer(ImporterProtocol):
 			return(entries)
 		self.security_list=qif.get_securities() # may be in qif export
 		uentries = self.map_universal_table(qif.get_transactions(True)[0])
-		entries = impshare.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency) 
+		entries = impshare.get_transactions(uentries, self.account_name, self.default_payee, self.currency, self.account_currency,self.cash_acct) 
 		return(entries)
 
 	def map_universal_table(self,transactions):
@@ -182,6 +183,8 @@ class Importer(ImporterProtocol):
 					impshare.decimalify(urd)
 					uentries.append(impshare.UniRow(**urd))
 			elif type(qt)==QifInvestment:
+				# a single Investment record indicates a brokerage
+				self.cash_acct = ':Cash'
 				act_str=self.clean_str(qt.action)
 				n_toks=[self.clean_str(qt.memo),act_str]
 				 # truly blank

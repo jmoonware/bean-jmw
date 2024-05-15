@@ -69,12 +69,10 @@ etrade_map_cols = {
 'Description':'description',
 }
 
-from collections import namedtuple
-EtradeRow = namedtuple('EtradeRow',etrade_cols)
-
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD',account_number=None):
 		self.account_name=account_name
+		self.cash_acct = ":Cash"
 		if not account_number:
 			acct_tok=self.account_name.split(':')[-1]
 			self.acct_tail=acct_tok[-4:] 
@@ -131,15 +129,8 @@ class Importer(ImporterProtocol):
 		# map to universal rows
 		transactions = self.map_universal_transactions(import_table)
 		# turn into Beancount transactions
-		entries = impshare.get_transactions(transactions, self.account_name, self.default_payee, self.currency, self.account_currency)
+		entries = impshare.get_transactions(transactions, self.account_name, self.default_payee, self.currency, self.account_currency,self.cash_acct)
 		return(entries)
-		
-		entries = self.get_transactions(import_table)
-
-		# add open directives; some may be removed in dedup
-		open_date=dt.date(dt.fromisoformat(default_open_date))
-		open_entries=[Open({'lineno':0,'filename':self.account_name},open_date,a,c,Booking("FIFO")) for a,c in self.account_currency.items()]	
-		return(open_entries + entries)
 
 	def file_account(self, file):
 		"""Return an account associated with the given file.

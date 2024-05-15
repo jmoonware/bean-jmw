@@ -58,6 +58,7 @@ FidoRow = namedtuple('FidoRow',list(fido_column_map.values()))
 class Importer(ImporterProtocol):
 	def __init__(self,account_name,currency='USD',account_number=None):
 		self.account_name=account_name
+		self.cash_acct = ':Cash'
 		if not account_number:
 			acct_tok=self.account_name.split(':')[-1]
 			self.acct_tail=acct_tok[-4:] 
@@ -106,7 +107,7 @@ class Importer(ImporterProtocol):
 		"""
 		import_table=self.create_table(file.name)
 		utr = self.map_universal_table(import_table)
-		entries = importer_shared.get_transactions(utr, self.account_name, self.default_payee, self.currency, self.account_currency)
+		entries = importer_shared.get_transactions(utr, self.account_name, self.default_payee, self.currency, self.account_currency, self.cash_acct)
 
 
 #		entries = self.get_transactions(import_table)
