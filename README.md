@@ -54,7 +54,7 @@ Typically, the steps of updating the ledgers consists of the following:
   * If using the stage.py script (the ledger dict in accts.py is set-up)
     > python -m beanjmw.stage --extract
   * To do this step manually, on each ledger run
-    > python -m beanjmw.bci extract -e _existing-ledger_ > _new-transactions__
+    > python -m beanjmw.bci extract -e _existing-ledger_ > _new-transactions_
     * This will extract the new, downloaded transactions and put them in _new-transactions_. The transactions in _new-transactions_ should be incremental (i.e. deduplicated from the _existing-ledger_.)
 * Update yaml rules for any unassigned accounts
   * Typically, on the first usage of 'bci extract', a few new _unassigned_.yaml files will be created in the downloads/yaml directory (or appended if they already exist), assigning any new transactions that didn't match a rule to 'UNASSIGNED' accounts.
@@ -62,10 +62,10 @@ Typically, the steps of updating the ledgers consists of the following:
 * Re-run _extract_ with updated rules
 * Create new ledger release candidate
   * The stage.py script does this automatically in the 'staging' directory and will run a bean-check to make sure it is correct
-  * If you are doing this manually, concatenate _existing-ledger_ with _new-transactions_ to a 'release candidate' ledger file (I usually append 'rc' to the name), then run bean-check on this file. If it passes, great- your ledger is now updated. Back-up your _existing-ledger_, the move the release candidate to the _existing-ledger_. 
+  * If you are doing this manually, concatenate _existing-ledger_ with _new-transactions_ to a 'release candidate' ledger file (I usually append 'rc' to the name), then run bean-check on this file. If it passes, great- your ledger is now updated. Back-up your _existing-ledger_, then move the release candidate to the _existing-ledger_. 
 * Backup old ledger, move release candidate to current ledger
   * The stage.py script does this with the --update option (and optional --remove option, which cleans up the files) i.e.
-    > python beanjmw.stage --update --remove
+    > python -m beanjmw.stage --update --remove
 * Archive (i.e. _file_ downloaded files) 
   * Run 
     > python -m beanjmw.bci file -o ../files 
