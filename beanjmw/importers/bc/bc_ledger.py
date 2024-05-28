@@ -13,8 +13,8 @@ from datetime import datetime as dt
 default_open_date='2000-01-01'
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,file_name='',reassign=False):
-		self.file_name=file_name
+	def __init__(self,account_name,import_filename='',reassign=False):
+		self.import_filename=import_filename
 		self.account_name=account_name
 		# if true, ignore account assignment
 		# generate assignment hints from current assignments

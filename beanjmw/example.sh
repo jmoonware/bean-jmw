@@ -6,7 +6,7 @@
 # Also make sure to activate the appropriate python venv
 #
 EXAMPLE_DIR=Example_Test
-LEDGER=example.txt
+LEDGER=example.bc
 REPORT_DATE=`date -Idate`
 # aliases for scripts
 BCI="python -m beanjmw.bci"
@@ -30,6 +30,7 @@ mkdir $EXAMPLE_DIR
 cd $EXAMPLE_DIR
 mkdir reports
 mkdir downloads
+mkdir files
 
 # create an example ledger for a number of years
 bean-example --date-begin $START_YEAR-01-01 -o $LEDGER
@@ -186,13 +187,14 @@ cd ../downloads
 
 $STAGE --split ../$LEDGER
 
-# this checks the ledgers for errors, then moves them up to the main ledger
-# dir if everything passes
+# this checks the the newly-split ledgers for errors, then moves them 
+# up to the main ledger dir if everything passes, which it should
 
 $STAGE --update --remove
 
-# copy the common file upward manually for now
+# copy the common and master file upward manually for now
 cp ../staging/common.bc ..
+cp ../staging/master.bc ..
 
 # Now that we have split ledgers, let's import a downloaded example
 # Normally you would download latest transactions from various institutions
@@ -235,4 +237,19 @@ $STAGE --update --remove
 
 $STAGE --clean --remove
 
+# as a final check, make sure our split ledgers have exactly the same
+# asset list as before
+echo "=== Checking assets breakdown with master.bc..."
+cd ../reports
+$BCR -f ../master.bc -t Assets -np -ed $END_YEAR-12-31  > Assets_master.tsv
+if diff Assets.tsv Assets_master.tsv | grep .; then
+ echo "Problem: Assets.tsv and Assets_master.tsv are different"
+fi
 
+# Finally, run bci file to archive the "downloads" (in this case, the 
+# original ledger plus the artificial credit-card download)
+# Since the original ledger maps to multiple accounts a warning will be 
+# issued
+echo "=== Archiving files..."
+cd ../downloads
+$BCI file -o ../files
