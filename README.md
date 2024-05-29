@@ -2,7 +2,7 @@
 # bean-jmw
 Code for using beancount v2 plain-text accounting package. 
 
-This project implements per-account automatic payee and account assignment to transactions (stored in yaml config files), and deduplication. Here is a brief description of each script:
+This project implements per-account automatic payee and account assignment to transactions (stored in yaml files), and deduplication. Here is a brief description of each script (see the [Wiki](https://github.com/jmoonware/bean-jmw/wiki) for more details):
 
 * stage.py - Used to iteratively import new transactions into per-account ledgers - uses the scripts described below
 * bci.py - identify, extract, or file actions for updating ledger
