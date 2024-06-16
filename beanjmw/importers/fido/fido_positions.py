@@ -202,7 +202,12 @@ class Importer(ImporterProtocol):
 		for l in lines:
 			if "Date downloaded" in l:
 				toks = l.split(' ')
-				balance_date = dt.date(dt.strptime(toks[2].strip(),'%m/%d/%Y'))
+				if '/' in toks[2]:
+					balance_date = dt.date(dt.strptime(toks[2].strip(),'%m/%d/%Y'))
+				elif '-' in toks[2]:
+					balance_date = dt.date(dt.strptime(toks[2].strip(),'%b-%d-%Y'))
+				else:
+					raise(ValueError("Yet another date format: "+toks[2]))
 				
 		nl=0
 		search_tok=list(fido_column_map.keys())[0]

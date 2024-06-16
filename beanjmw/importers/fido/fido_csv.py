@@ -29,6 +29,7 @@ investment_actions={
 'ADVISOR FEE':'MiscExp',
 'ASSET FEE':'MiscExp',
 'RECEIVED FROM ':'Transfer',
+'EXCHANGED TO':'Transfer',
 }
 
 default_open_date='2000-01-01'
@@ -188,9 +189,22 @@ class Importer(ImporterProtocol):
 			# FIDO specific: Actual date may be in action!
 			if 'action' in urd and 'as of' in urd['action']:
 				dm = re.search("[0-9]{2}/[0-9]{2}/[0-9]{4}",urd['action'])
-				urd['date']=dm[0]
+				# FIDO date format strikes again...
+				if dm==None:
+					dm = re.search("[A-Z]{1}[a-z]{2}-[0-9]{2}-[0-9]{4}",urd['action'])
+				if dm:
+					urd['date']=dm[0]
+				else:
+					raise(ValueError("Didn't find date in action string: "+urd['action']))
+
 			# FIDO specific: replace with datetime.date value 
-			urd['date'] = dt.date(dt.strptime(urd['date'],'%m/%d/%Y'))
+			# GFD FIDO keeps changing the goddamned format!
+			if '/' in urd['date']:
+				urd['date'] = dt.date(dt.strptime(urd['date'],'%m/%d/%Y'))
+			elif '-' in urd['date']:
+				urd['date'] = dt.date(dt.strptime(urd['date'],'%b-%d-%Y'))
+			else:
+				raise(ValueError("Yet another date format from FIDO! "+urd['date']))
 			# FIDO specific: interest income looks like this
 			if "CASH" in urd['description']: # special case
 				urd['symbol']=self.currency

@@ -19,6 +19,8 @@ clargs = ap.parse_args(sys.argv[1:])
 
 df=pd.read_csv(clargs.file_name,sep='\t')
 
+current_year = dt.now().year
+
 yr = np.array([dt.fromisoformat(d).year for d in df['start_date']])
 
 fig, ax = plt.subplots()
