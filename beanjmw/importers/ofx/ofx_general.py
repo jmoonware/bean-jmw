@@ -33,7 +33,7 @@ investment_actions={
 'sellopt':'Sell',
 'sellother':'Sell',
 'sellstock':'Sell',
-'transfer':'XOut',
+'transfer':'Xout',
 'split':'StkSplit',
 }
 
@@ -140,7 +140,8 @@ class Importer(ImporterProtocol):
 					date = dt.date(p.date),
 					account = ":".join([self.account_name,self.security_ids[p.security]]),
 					amount = Amount(p.units,self.security_ids[p.security]),
-					tolerance = None,
+#					tolerance = None,
+					tolerance = 0.001,
 					diff_amount = None,
 				)
 				balances.append(nbal)

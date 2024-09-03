@@ -173,7 +173,7 @@ class Importer(ImporterProtocol):
 		if urd['action'] in action_map:
 			urd['action']=action_map[urd['action']]
 		else: # unsure what we should do here so warn
-			sys.stderr.write("map_actions: Unknown inv action: {0} in {1}\n".format(urd['action'],urd))
+			sys.stderr.write("Etrade: Unknown inv action: {0} in {1}\n".format(urd['action'],urd))
 		# special Etrade logic: two records for dividends
 		# First has a zero-quantity marked as REINV, LT, or ST Cap Gain
 		# (although the marking in description is only since 2021 I think)

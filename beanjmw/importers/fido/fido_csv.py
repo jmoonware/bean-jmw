@@ -167,7 +167,7 @@ class Importer(ImporterProtocol):
 					break
 			# unsure what we should do here so warn
 			if not fido_action:
-				sys.stderr.write("Unknown inv action: {0} in {1}\n".format(urd["action"],urd))
+				sys.stderr.write("Fido: Unknown inv action: {0} in {1}\n".format(urd["action"],urd))
 		# replace with universal action
 		urd["action"]=fido_action
 		return

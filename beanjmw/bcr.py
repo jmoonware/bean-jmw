@@ -17,6 +17,17 @@ from collections import namedtuple
 import matplotlib.pyplot as plt
 from . import dissect as ds
 
+def versioned_filename(bpath):
+	nbpath = str(bpath)
+	if os.path.isfile(bpath):
+		version=0
+		pre,ext = os.path.splitext(nbpath)
+		nbpath = '.'.join([pre,str(version),ext])
+		while os.path.isfile(nbpath):
+			version+=1
+			nbpath = '.'.join([pre,str(version),ext])
+	return(nbpath)
+
 report_currency='USD'
 def convert_currency(symbol,units,quote_date=None):
 	res = round(Decimal(units),5)
@@ -332,10 +343,12 @@ else:
 	ax.set_title("Total {0}: {1:,.0f} {2}".format(clargs.type,sum(plot_values),report_currency))
 plt.tight_layout()
 if clargs.html:
-	fn=os.path.split(os.path.splitext(clargs.filename)[0])[-1]+'_'+clargs.type+'.png'
-	plt.savefig(fn)
+	today_str = dt.date(dt.now()).isoformat()
+	fn=os.path.split(os.path.splitext(clargs.filename)[0])[-1]+'_'+clargs.type+'_'+ today_str + '.png'
+	fv = versioned_filename(fn)
+	plt.savefig(fv)
 	print_doc.append("<td>")
-	print_doc.append('<img src="{0}">'.format(fn))
+	print_doc.append('<img src="{0}">'.format(fv))
 	print_doc.append("</td>")
 	print_doc.append("</tr>")
 	print_doc.append("</table>")

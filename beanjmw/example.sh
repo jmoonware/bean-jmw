@@ -122,7 +122,8 @@ echo "=== Assets progression by year..."
 # Reports for above ledger
 for t in 'Assets' 'Liabilities'
 do
-	echo -e "start_date\tend_date\tGrandTotal\tValue" > NW_$t$REPORT_DATE.txt
+#	echo -e "start_date\tend_date\tGrandTotal\tValue" > NW_$t$REPORT_DATE.txt
+	touch NW_$t$REPORT_DATE.txt
 done
 
 for ((i = $START_YEAR; i <= $END_YEAR; i++))

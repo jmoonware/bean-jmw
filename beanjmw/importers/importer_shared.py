@@ -112,7 +112,11 @@ def decimalify(urd):
 	sfig = [2,4,2,2,2,2]
 	for att,sf in zip(convert_names,sfig):
 		if urd[att] and type(urd[att])==str and len(urd[att]) > 0:
-			urd[att] = round(Decimal(urd[att]),sf)
+			try:
+				urd[att] = round(Decimal(urd[att]),sf)
+			except Exception as ex:
+				sys.stderr.write("decimalify error: {0}\n".format(ex))
+
 		elif type(urd[att])==str and len(urd[att])==0:
 			urd[att] = None
 	return
@@ -428,7 +432,7 @@ def generate_investment_postings(uni,account_name,currency,account_currency,cash
 				units = Amount(-amt,currency)
 			)
 	else:
-		sys.stderr.write("Unknown investment action {0}\n".format(uni))
+		sys.stderr.write("{0}: Unknown investment action {1}\n".format(account_name,uni))
 
 	return(postings)
 
