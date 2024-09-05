@@ -4,6 +4,7 @@ from datetime import timedelta
 import argparse
 import sys
 import matplotlib.pyplot as plt
+import numpy as np
 
 class bcolors:
     HEADER = '\033[95m'
@@ -36,6 +37,7 @@ def run_com(args,tag='.'):
 default_ledger = "../master.bc"
 default_prices = "../prices.bc"
 default_monthly_interval = 1
+default_plot_top = -1
 
 ap = argparse.ArgumentParser()
 ap.add_argument('-f','--ledger_file',required=False,help='Ledger file (default = {0}'.format(default_ledger),default=default_ledger)
@@ -45,6 +47,7 @@ ap.add_argument('-od','--output_data',required=False,help='Name of tsv file of p
 ap.add_argument('-sd','--start_date',required=False,help='Starting date (iso format, default one year ago)',default=dt.date(dt.now()-timedelta(days=365)).isoformat())
 ap.add_argument('-ed','--end_date',required=False,help='End date (iso format, default today)',default=dt.date(dt.now()).isoformat())
 ap.add_argument('-mi','--monthly_interval',required=False,help='Interval between points (months, default = {0})'.format(default_monthly_interval),default=default_monthly_interval)
+ap.add_argument('-pt','--plot_top',required=False,help='Plot only this many top-valued instition (aggregate the rest into "other", 0 for plot all, negative for plot only total, default {0})'.format(default_plot_top),default=default_plot_top)
 
 clargs = ap.parse_args(sys.argv[1:])
 
@@ -84,9 +87,9 @@ for m in range(0,months,int(clargs.monthly_interval)):
 			by_institution[inst][ed]+=float(toks[-1])
 
 # header line
-h = ['date','Total']
-[h.append(inst) for inst in by_institution]
-print('\t'.join(h))
+header_line = ['date','Total']
+[header_line.append(inst) for inst in by_institution]
+print('\t'.join(header_line))
 
 plots = [[]]
 [plots.append([]) for inst in by_institution]
@@ -104,8 +107,25 @@ for d,r in zip(dates,results):
 	print('\t'.join(l))
 
 plt.plot(dates,plots[0],label="Total")
-for idx, inst in enumerate(by_institution.keys()):
-	plt.plot(dates,plots[idx+1],label=inst)	
+
+if int(clargs.plot_top) > 0: # only plot these top N institutions
+	dplots = np.array(plots)
+	print(dplots[:,-1]) # latest values
+	max_cols = np.argsort(dplots[:,-1])[::-1]
+	print(max_cols)
+	other = np.zeros(len(dplots[0]))
+	for idx, max_idx in enumerate(max_cols[1:]):
+		# max_cols includes the first 'total' col, so indices off by one 
+		inst = list(by_institution.keys())[max_idx-1]
+		if idx < int(clargs.plot_top):
+			plt.plot(dates,plots[max_idx],label=inst)	
+		else: # rest of institutions
+			other+=plots[max_idx]
+	plt.plot(dates,other,label="Other")
+
+elif int(clargs.plot_top)==0: # plot everything
+	for idx, inst in enumerate(by_institution.keys()):
+		plt.plot(dates,plots[idx+1],label=inst)	
 
 plt.legend()
 plt.xlabel("Date")
