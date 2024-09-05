@@ -30,12 +30,16 @@ ap.add_argument('-p','--points',required=False,help='Plot change by point',defau
 ap.add_argument('-rc','--report_currency',required=False,help='Name of commidity, or USD (default)',default='USD')
 ap.add_argument('-og','--output_graph',required=False,help='Name of plot image file to save - otherwise plot to screen',default='')
 ap.add_argument('-od','--output_data',required=False,help='Name of tsv file of plot data to save',default='')
-ap.add_argument('-sd','--start_date',required=False,help='Name of tsv file of plot data to save',default=dt.date(dt.now()-timedelta(days=365)).isoformat())
-ap.add_argument('-ed','--end_date',required=False,help='Name of tsv file of plot data to save',default=dt.date(dt.now()).isoformat())
+ap.add_argument('-sd','--start_date',required=False,help='Start date (iso format, default one year ago)',default=dt.date(dt.now()-timedelta(days=365)).isoformat())
+ap.add_argument('-ed','--end_date',required=False,help='End date (iso format, default today)',default=dt.date(dt.now()).isoformat())
 
 clargs = ap.parse_args(sys.argv[1:])
 
-entries, errors, config = load_file(clargs.ledger_file)
+if os.path.isfile(clargs.ledger_file):
+	entries, errors, config = load_file(clargs.ledger_file)
+else:
+	ap.exit(message="Can't find '{0}' - did you specify a ledger file?\n".format(clargs.ledger_file))
+
 
 data_table={}
 

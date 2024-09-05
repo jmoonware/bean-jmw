@@ -1,6 +1,9 @@
 import subprocess
 from datetime import datetime as dt
 from datetime import timedelta
+import argparse
+import sys
+import matplotlib.pyplot as plt
 
 class bcolors:
     HEADER = '\033[95m'
@@ -30,19 +33,33 @@ def run_com(args,tag='.'):
 		sys.stdout.write(bcolors.OKGREEN + tag +bcolors.ENDC)
 	return(out_lines)
 
-LEDGER = "../master.bc"
-PRICES = "../prices.bc"
-REP_PREFIX = "RNW_"
+default_ledger = "../master.bc"
+default_prices = "../prices.bc"
+default_monthly_interval = 1
 
-months = 3
+ap = argparse.ArgumentParser()
+ap.add_argument('-f','--ledger_file',required=False,help='Ledger file (default = {0}'.format(default_ledger),default=default_ledger)
+ap.add_argument('-pf','--price_file',required=False,help='Prices file (default = {0})'.format(default_prices),default=default_prices)
+ap.add_argument('-og','--output_graph',required=False,help='Name of plot image file to save - otherwise plot to screen',default='')
+ap.add_argument('-od','--output_data',required=False,help='Name of tsv file of plot data to save',default='')
+ap.add_argument('-sd','--start_date',required=False,help='Starting date (iso format, default one year ago)',default=dt.date(dt.now()-timedelta(days=365)).isoformat())
+ap.add_argument('-ed','--end_date',required=False,help='End date (iso format, default today)',default=dt.date(dt.now()).isoformat())
+ap.add_argument('-mi','--monthly_interval',required=False,help='Interval between points (months, default = {0})'.format(default_monthly_interval),default=default_monthly_interval)
 
-end_date = dt.date(dt.now())
+clargs = ap.parse_args(sys.argv[1:])
+
 report_date = dt.date(dt.now())
 
 results = []
 dates = []
+by_institution={}
 
-for m in range(months):
+end_date = dt.date(dt.fromisoformat(clargs.end_date))
+start_date = dt.date(dt.fromisoformat(clargs.start_date))
+
+months = int(round(((end_date-start_date).days/30.4375)))
+
+for m in range(0,months,int(clargs.monthly_interval)):
 	cm = (end_date.month-1 -(months-m))%12 + 1
 	yr = end_date.year - int(((months-m-1) + (12-end_date.month+1))/12) 
 	sd = dt.date(dt(yr,cm,end_date.day))
@@ -50,13 +67,47 @@ for m in range(months):
 		ed = dt.date(dt(yr,cm+1,end_date.day))
 	else:
 		ed = dt.date(dt(yr+1,1,end_date.day))
-	com = ["python","-m","beanjmw.bcr","-f",LEDGER,"-sd",sd.isoformat(),"-ed",ed.isoformat(),"-t","Assets","-pt","-pf",PRICES,"-np"]
+	com = ["python","-m","beanjmw.bcr","-f",clargs.ledger_file,"-sd",sd.isoformat(),"-ed",ed.isoformat(),"-t","Assets","-pt","-pf",clargs.price_file,"-np"]
 	res = run_com(com,tag=ed.isoformat())
-	for r in res:
+#	print(res)
+	for r in res[1:]:
+		toks = r.split('\t')
 		if "GrandTotal" in r:
-			results.append(r.split('\t')[-1].strip())
-			dates.append(ed.isoformat())
+			results.append(toks[-1].strip())
+			dates.append(ed)
+		elif not 'TOTAL' in r and len(toks)==4:
+			inst = toks[0]
+			if not inst in by_institution:
+				by_institution[inst]={}
+			if not ed in by_institution[inst]:
+				by_institution[inst][ed]=0
+			by_institution[inst][ed]+=float(toks[-1])
+
+# header line
+h = ['date','Total']
+[h.append(inst) for inst in by_institution]
+print('\t'.join(h))
+
+plots = [[]]
+[plots.append([]) for inst in by_institution]
 
 for d,r in zip(dates,results):
-	print(d+'\t'+r)
-	
+	l = [d.isoformat(),r]
+	plots[0].append(float(r))
+	for idx, inst in enumerate(by_institution.keys()):
+		if d in by_institution[inst]:
+			l.append("{0:.2f}".format(by_institution[inst][d]))
+			plots[idx+1].append(by_institution[inst][d])
+		else:
+			l.append('0.00')
+			plots[idx+1].append(0.0)
+	print('\t'.join(l))
+
+plt.plot(dates,plots[0],label="Total")
+for idx, inst in enumerate(by_institution.keys()):
+	plt.plot(dates,plots[idx+1],label=inst)	
+
+plt.legend()
+plt.xlabel("Date")
+plt.ylabel("Value (USD)")
+plt.show()
