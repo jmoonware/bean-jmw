@@ -4,19 +4,20 @@ Code for using beancount v2 plain-text accounting package.
 
 This project implements per-account automatic payee and account assignment to transactions (stored in yaml files), and deduplication. Here is a brief description of each script (see the [Wiki](https://github.com/jmoonware/bean-jmw/wiki) for more details):
 
-* stage.py - Used to iteratively import new transactions into per-account ledgers - uses the scripts described below
-* bci.py - identify, extract, or file actions for updating ledger
-* bcr.py - reporting script, makes static text or HTML reports
-* bar.py - dissects portfolio by sector, individual stock, and other categories, scraping info from the web as needed
+* stage.py - Used to iteratively import new transactions into per-account ledgers - uses these scripts:
+  * bci.py - identify, extract, or file actions for updating ledger
+  * bcr.py - reporting script, makes static text or HTML reports
+  * bar.py - dissects portfolio by sector, individual stock, and other categories, scraping info from the web as needed
 
-In addition there are some utility scripts 
+In addition there are some utility scripts:
 
 * plot_things.py - makes plots of account balances or changes, optionally with cost basis (by time)
-* plot_networth.py - simple specialized script to plot net worth over time
+* recent_net_worth.py - prints/plots net worth total (and by institutions)
+* plot_networth.py (deprecated) - simple specialized script to plot net worth over time
 * yaml_util.py - organizes, sorts, possibly simplifies yaml assignment rules
 * bal.py - plots (and prints) the difference between balance of specific account and supplied balance values in a text file (useful for tracking down where balances diverge)
 
-To see examples how each script can be used, run the example.sh bash script. 
+To see examples how each script can be used, run/read the example.sh bash script. 
 
 
 ## Setup instructions:
@@ -30,10 +31,10 @@ python3.9 -m venv avenv
 source avenv/bin/activate
 ```
 
-Clone this project (bean-jmw) somewhere. This can be in the $FINROOT directory, although the repository can be anywhere. My preference is to keep it 'parallel' to $FINROOT
+Clone this project (bean-jmw) somewhere. This can be in the $FINROOT directory, although the repository can be anywhere. My preference is to keep it 'parallel' to $FINROOT. For example, if $FINROOT is the directory 'finroot'
 
 ```
-mkdir $FINROOT
+mkdir finroot
 git clone https://github.com/jmoonware/bean-jmw
 cd bean-jmw
 pip install -e . 
