@@ -21,6 +21,7 @@ transaction_types={
 'Dividend', # could be LT, ST, etc.
 'Fee',
 'Interest',
+'Interest Income',
 'Other', # appear to be cancelling pairs of share sales/buys
 'Reorganization', # mutual funds changing symbol
 'Sold',
@@ -35,6 +36,7 @@ action_map={
 'Dividend':'Div', # could be LT, ST, etc.
 'Fee':'MiscExp',
 'Interest':'IntInc',
+'Interest Income':'IntInc',
 'Other':'Other', # appear to be cancelling pairs of share sales/buys
 'Reorganization':'Merger', # mutual funds changing symbol
 'Sold':'Sell',

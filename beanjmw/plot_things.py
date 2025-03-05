@@ -13,6 +13,7 @@ import argparse
 import sys
 from datetime import datetime as dt
 from datetime import timedelta
+import matplotlib.dates as mdates 
 
 # linear fit func
 def fitfun(x,m,b,y0):
@@ -109,6 +110,27 @@ monthly_data=np.array([sum(ydata[(xdata>=sd)&(xdata<ed)]) for sd,ed in zip(month
 monthly_years=[sd.year for sd in month_bins[:-1]]
 all_years=np.unique(monthly_years)
 
+def finish_plot(ax,tag=''):
+	plt.title(clargs.account)
+	plt.xlabel("Date")
+	ax.set_ylabel(clargs.report_currency)
+	ax.legend(loc='upper left')
+	if len(clargs.output_graph) > 0:
+		save_name=clargs.output_graph
+		if len(tag) > 0:
+			toks=clargs.output_graph.split('.')
+			save_name = toks[0] + "_" + tag + "." + toks[-1]	
+		plt.savefig(save_name)
+	else:
+		plt.show()
+
+# plot monthly data
+fig, ax = plt.subplots()
+idx = (month_bins >= dt.fromisoformat(clargs.start_date).date())&(month_bins <= dt.fromisoformat(clargs.end_date).date())
+ax.plot((month_bins[idx])[1:],monthly_data[idx[1:]],label=clargs.account)
+ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(ax.xaxis.get_major_locator()))
+finish_plot(ax,tag="months")
+
 fig, ax = plt.subplots()
 
 # plot all points
@@ -146,14 +168,11 @@ else: # plot by monthly average
 		data_table['fit']=fitfun(all_years,res[0][0],res[0][1],res[0][2])
 		ax.plot(all_years,data_table['fit'],label='linear {0:.2f}% pa'.format(perc_change))
 
-plt.title(clargs.account)
-plt.xlabel("Date")
-ax.set_ylabel(clargs.report_currency)
-ax.legend(loc='upper left')
-if len(clargs.output_graph) > 0:
-	plt.savefig(clargs.output_graph)
-else:
-	plt.show()
+# KLUDGE to fix bad tick formatter
+if len(all_years) < 6:
+	ax.xaxis.set_ticks(np.arange(all_years[0],all_years[-1]+1,1))
+
+finish_plot(ax)
 
 if len(clargs.output_data) > 0:
 	with open(clargs.output_data,'w') as f:

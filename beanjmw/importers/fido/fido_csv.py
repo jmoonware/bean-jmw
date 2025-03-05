@@ -30,6 +30,9 @@ investment_actions={
 'ASSET FEE':'MiscExp',
 'RECEIVED FROM ':'Transfer',
 'EXCHANGED TO':'Transfer',
+'WIRE TRANSFER':'Transfer',
+'TAX W/H':'Transfer',
+'NORMAL DISTR':'Transfer',
 }
 
 default_open_date='2000-01-01'
@@ -57,7 +60,7 @@ from collections import namedtuple
 FidoRow = namedtuple('FidoRow',list(fido_column_map.values()))
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,currency='USD',account_number=None):
+	def __init__(self,account_name,currency='USD',account_number=None,version=2):
 		self.account_name=account_name
 		self.cash_acct = ':Cash'
 		if not account_number:
@@ -68,6 +71,14 @@ class Importer(ImporterProtocol):
 		self.currency=currency
 		self.account_currency={} # added as discovered
 		self.default_payee = "Fido CSV"
+		self.version=version
+		if self.version == 1:
+			self.acct_col = 1
+		elif self.version==2:
+			self.acct_col = 2
+		else:
+			sys.stderr.write("Fido csv: unrecog importer version\n")
+
 		super().__init__()
 
 	def identify(self, file):
@@ -88,8 +99,8 @@ class Importer(ImporterProtocol):
 				return False
 			for l in head_lines[ln+1:]:
 				toks=l.split(',')
-				if len(toks) > 1:
-					fa=self.unquote(toks[1])
+				if len(toks) > self.acct_col:
+					fa=self.unquote(toks[self.acct_col])
 					if fa[len(fa)-4:]==self.acct_tail:
 						found=True
 						break
@@ -220,8 +231,10 @@ class Importer(ImporterProtocol):
 	# remove single quotes if present...
 	def unquote(self,s):
 		unquote=s
-		if s and len(s) > 0 and s[0]=="'" and s[-1]=="'":
-			unquote = s[1:-1]
+		if s:
+			unquote=s.strip('"')
+		if unquote and len(unquote) > 0 and unquote[0]=="'" and unquote[-1]=="'":
+			unquote = unquote[1:-1]
 		return unquote
 
 	def create_table(self,filename):
@@ -248,7 +261,14 @@ class Importer(ImporterProtocol):
 			is_fido=False
 		else:
 			is_fido=True
+			# header col
 			cols=[self.unquote(c.strip()) for c in lines[nl].split(',')]
+			# KLUDGE to fix ever changing Fido formats! Aaaah!
+			if self.version == 2:
+				try:
+					cols.remove("Account Number")
+				except ValueError as ve:
+					sys.stderr.write("Fido CSV: Bad v2 format: {0}\n".format(cols))
 			for c,fc in zip(cols,fido_cols):
 				if not fc in c:
 					is_fido=False
@@ -261,6 +281,8 @@ class Importer(ImporterProtocol):
 		for l in lines[nl+1:]:
 			ctoks=[self.unquote(c.strip()) for c in l.split(',')]
 			if len(ctoks) >= len(fido_cols):
+				if self.version == 2:
+					del ctoks[1] # delete this column!
 				if ctoks[1][len(ctoks[1])-4:]==self.acct_tail:
 					# remove double quotes
 					sctoks=[c.strip().replace('"','') for c in ctoks]

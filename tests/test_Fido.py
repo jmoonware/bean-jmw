@@ -12,7 +12,8 @@ t_errs=[11,31,9]
 t_imp = [fido_csv,fido_csv,qif_importer]
 acct_filter="Fidelity"
 output_name='old_fido_test.bc'
+versions=[1,1,None]
 
 def test_FidoConvert():
-	converttest(t_examples, t_accounts, t_acct_nums, t_errs, t_imp, acct_filter, output_name)	
+	converttest(t_examples, t_accounts, t_acct_nums, t_errs, t_imp, acct_filter, output_name,versions)
 

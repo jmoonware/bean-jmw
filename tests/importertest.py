@@ -12,7 +12,7 @@ from beancount.core.data import Open
 import shutil
 import os, glob
 
-def converttest(t_examples,t_accounts,t_acct_nums,t_errs,t_imp,acct_filter,output_name):
+def converttest(t_examples,t_accounts,t_acct_nums,t_errs,t_imp,acct_filter,output_name,versions=None):
 	# this discovers test dir if in path tree
 	cpaths=[r for r,d,f in os.walk(os.path.abspath('.')) if t_examples[0] in f]
 	if len(cpaths)>0:
@@ -21,9 +21,14 @@ def converttest(t_examples,t_accounts,t_acct_nums,t_errs,t_imp,acct_filter,outpu
 	file_entries = []
 	arg_check=[len(x) for x in [t_examples,t_accounts,t_acct_nums,t_errs,t_imp]]
 	assert len(t_examples)==len(t_accounts)==len(t_acct_nums)==len(t_errs)==len(t_imp),"converttest: Arg lengths don't match {0}".format(arg_check)
-	for tf,ta,tn,en,imp in zip(t_examples,t_accounts,t_acct_nums,t_errs,t_imp):
+	if versions != None:
+		assert len(t_examples)==len(t_accounts)==len(t_acct_nums)==len(t_errs)==len(t_imp)==len(versions),"converttest: Arg lengths don't match {0}".format(arg_check)
+	for i,tf,ta,tn,en,imp in zip(range(len(t_imp)),t_examples,t_accounts,t_acct_nums,t_errs,t_imp):
 		print("!!! "+tf)
-		importer = imp.Importer(ta,account_number=tn)
+		if versions!=None and len(versions)>i and versions[i]!=None:
+			importer = imp.Importer(ta,account_number=tn,version=versions[i])
+		else:
+			importer = imp.Importer(ta,account_number=tn)
 		assert importer,"No importer"
 		fn = os.path.join(cpath,tf)
 		fc = _FileMemo(fn)

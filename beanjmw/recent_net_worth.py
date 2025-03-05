@@ -86,10 +86,11 @@ for m in range(0,months,int(clargs.monthly_interval)):
 				by_institution[inst][ed]=0
 			by_institution[inst][ed]+=float(toks[-1])
 
+result_table=[]
 # header line
 header_line = ['date','Total']
 [header_line.append(inst) for inst in by_institution]
-print('\t'.join(header_line))
+result_table.append('\t'.join(header_line))
 
 plots = [[]]
 [plots.append([]) for inst in by_institution]
@@ -104,7 +105,7 @@ for d,r in zip(dates,results):
 		else:
 			l.append('0.00')
 			plots[idx+1].append(0.0)
-	print('\t'.join(l))
+	result_table.append('\t'.join(l))
 
 plt.plot(dates,plots[0],label="Total")
 
@@ -130,4 +131,12 @@ elif int(clargs.plot_top)==0: # plot everything
 plt.legend()
 plt.xlabel("Date")
 plt.ylabel("Value (USD)")
-plt.show()
+if len(clargs.output_graph) > 0:
+	plt.savefig(clargs.output_graph)
+else:
+	plt.show()
+if len(clargs.output_data) > 0:
+	with open(clargs.output_data,'w') as f:
+		[f.write(l+'\n') for l in result_table]
+else:
+	[print(l) for l in result_table]
