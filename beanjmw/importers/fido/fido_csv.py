@@ -31,8 +31,8 @@ investment_actions={
 'RECEIVED FROM ':'Transfer',
 'EXCHANGED TO':'Transfer',
 'WIRE TRANSFER':'Transfer',
-'TAX W/H':'Transfer',
-'NORMAL DISTR':'Transfer',
+'TAX W/H':'Xout',
+'NORMAL DISTR':'Xout',
 }
 
 default_open_date='2000-01-01'
