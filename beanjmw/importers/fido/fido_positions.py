@@ -132,12 +132,15 @@ class Importer(ImporterProtocol):
 		balances=[]
 		for uni in unrs:
 			if uni.action=='balance': 
-				if uni.quantity==None:
+				if uni.quantity==None and uni.symbol==self.currency: 
 					acct = self.account_name + ":Cash"
 					amt = Amount(uni.amount,self.currency)
 				else:
 					acct = ":".join([self.account_name,uni.symbol])
-					amt = Amount(uni.quantity,uni.symbol)
+					if uni.quantity!=None:
+						amt = Amount(uni.quantity,uni.symbol)
+					else:
+						amt = Amount(uni.amount,uni.symbol)
 				nbal = Balance(
 					meta=new_metadata("FidoPosition", 0),
 					date = uni.date,
@@ -167,6 +170,9 @@ class Importer(ImporterProtocol):
 			# FIDO specific: replace with datetime.date value 
 			urd['date'] = balance_date
 			urd['action']='balance'
+			# FIDO sometimes tacks on ** to the symbols, gahh
+			if '**' in urd['symbol']:
+				urd['symbol'] = urd['symbol'].replace('**','')
 			# clean up dict values
 			importer_shared.decimalify(urd)
 			# make named tuple from final dict

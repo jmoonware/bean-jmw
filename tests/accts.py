@@ -1,5 +1,5 @@
 from importers.qif import qif_importer
-from importers.fido import fido_csv
+from importers.fido import fido_csv, fido_positions
 from importers.ofx import ofx_general
 from importers.csv import csv_general
 from importers.bc import bc_ledger
@@ -16,6 +16,7 @@ ofx_general.Importer("Assets:US:BofA:Checking", account_number="[0-9]+6789"),
 ofx_general.Importer("Assets:US:Vanguard:V9999", account_number="[0-9]+9999"),
 fido_csv.Importer("Assets:US:Fidelity:FX1111",account_number='1111',version=1),
 fido_csv.Importer("Assets:US:Fidelity:FZ2222",account_number='2222',version=1),
+fido_positions.Importer("Assets:US:Fidelity:FZ2222",account_number='2222'),
 qif_importer.Importer("Assets:US:Fidelity:F1234"),
 qif_importer.Importer("Assets:US:BofA:Checking"),
 qif_importer.Importer("Liabilities:US:Discover:D6789"),

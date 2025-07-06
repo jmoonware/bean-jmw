@@ -1,6 +1,6 @@
 from beanjmw.bci import process_extracted_entries, filter_entries
 import beanjmw.bci as bci
-from beanjmw.importers.fido import fido_csv
+from beanjmw.importers.fido import fido_csv, fido_positions
 from beanjmw.importers.qif import qif_importer
 from beanjmw.importers.filters import assign
 from beancount.ingest.cache import _FileMemo
@@ -86,5 +86,5 @@ def converttest(t_examples,t_accounts,t_acct_nums,t_errs,t_imp,acct_filter,outpu
 		[f.write(format_entry(e)+'\n') for e in all_entries]
 		
 	assert len(valid_errors)==0, "All errors = {0}, should be zero".format(len(valid_errors))
-	assert os.system('bean-check {0}'.format(new_out_path))==0
+	assert os.system('bean-check {0}'.format(new_out_path))==0,'bean-check failed on final output {0}'.format(output_name.replace('old','new'))
 
