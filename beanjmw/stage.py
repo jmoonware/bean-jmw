@@ -49,6 +49,7 @@ ap = argparse.ArgumentParser()
 
 ap.add_argument("-c","--check",required=False,help="Only run bean-check",default=False,action="store_true")
 ap.add_argument("-i","--identify",required=False,help="Identify files to be extracted",default=False,action="store_true")
+ap.add_argument("--archive",required=False,help="Archive files to be extracted",default=False,action="store_true")
 ap.add_argument("-e","--extract",required=False,help="Extract latest downloads, make release candidates, check",default=False,action="store_true")
 ap.add_argument("--clean",required=False,help="Clean up yaml files",default=False,action="store_true")
 ap.add_argument("-v","--verbose",required=False,help="Print all details",default=False,action="store_true")
@@ -195,6 +196,26 @@ def identify_files():
 			print(bcolors.OKBLUE + fn + bcolors.ENDC)
 			print("\t{0} ({1})".format(acct,imptr))
 	check_fatal_error(err)
+	return
+
+def archive_files():
+	make_path(archive_path)
+	ecom = "python -m beanjmw.bci file -o {0} -n".format(archive_path)
+	err,stdout_lines,stderr_lines=run_command_std(ecom)
+	# re-parse identify output to something simpler unless verbose
+	if clargs.verbose:
+		[print(l) for l in stdout_lines]
+	else:
+		for idx in range(0,int(len(stdout_lines)),4):
+			fn = stdout_lines[idx+3].split()[-1]
+			print(bcolors.OKBLUE + fn + bcolors.ENDC)
+	check_fatal_error(err)
+	if len(stdout_lines) > 0: # something to do
+		doit = input("Are these destinations OK [Yes/n]?")
+		if doit=="Y" or doit=="Yes":
+			print("Archiving...")
+		else:
+			print("Skipping - files are still in place") 
 	return
 
 def extract_files():
@@ -515,6 +536,8 @@ if clargs.clean:
 	clean_yaml()
 if clargs.remove and not clargs.update:
 	remove_marked()
+if clargs.archive:
+	archive_files()
 
 # some other useful functions
 if len(clargs.split) > 0:
