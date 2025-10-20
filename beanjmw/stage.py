@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 
 ledger_path = ".."
 staging_path = "../staging"
+archive_path = "../files"
 
 # relative to ledger_path
 backup_folder = "backup"
@@ -47,6 +48,7 @@ delete_suffix = ".deleteme"
 ap = argparse.ArgumentParser()
 
 ap.add_argument("-c","--check",required=False,help="Only run bean-check",default=False,action="store_true")
+ap.add_argument("-i","--identify",required=False,help="Identify files to be extracted",default=False,action="store_true")
 ap.add_argument("-e","--extract",required=False,help="Extract latest downloads, make release candidates, check",default=False,action="store_true")
 ap.add_argument("--clean",required=False,help="Clean up yaml files",default=False,action="store_true")
 ap.add_argument("-v","--verbose",required=False,help="Print all details",default=False,action="store_true")
@@ -58,6 +60,10 @@ ap.add_argument("--split",required=False,help="Split this file into sub-ledgers 
 ap.add_argument("--last",required=False,help="Prints latest date in each ledger (useful to know when downloading new files",default=False,action='store_true')
 
 clargs = ap.parse_args(sys.argv[1:])
+
+if len(sys.argv)==1: # default to -h 
+	ap.print_usage()
+	sys.exit(0)
 
 try:
 	from accts import ledgersbyacct
@@ -146,6 +152,50 @@ def print_last():
 			sys.stderr.write(bcolors.OKBLUE + "Latest record for {0}:".format(epath) + bcolors.ENDC + "\n")
 			run_command(com)
 			sys.stderr.write('\n')
+
+def decode_std(raw):
+	std_lines=[]
+	draw=raw.decode('UTF-8').split('\n')
+	for x in draw:
+		if len(x) > 0:
+			std_lines.append(x)
+	return(std_lines)
+
+def run_command_std(com):
+	error = None
+	stdout_lines=[]
+	stderr_lines=[]
+	if clargs.test:
+		print(com)
+	else:
+		try:
+			p = subprocess.Popen(com.split(' '),stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+			stdout_raw, stderr_raw=p.communicate()
+			stdout_lines=decode_std(stdout_raw)
+			stderr_lines=decode_std(stderr_raw)
+
+		except Exception as ex:
+			sys.stderr.write(bcolors.FAIL + "Error: run_command_std: {0}: {1}".format(com,str(ex))+bcolors.ENDC)
+			error = str(ex)
+	return(error,stdout_lines,stderr_lines)
+
+def identify_files():
+	make_path(archive_path)
+	ecom = "python -m beanjmw.bci identify"
+	err,stdout_lines,stderr_lines=run_command_std(ecom)
+	# re-parse identify output to something simpler unless verbose
+	if clargs.verbose:
+		[print(l) for l in stdout_lines]
+	else:
+		for idx in range(0,int(len(stdout_lines)),3):
+			fn = os.path.split(stdout_lines[idx].split()[-1])[-1]
+			frag = stdout_lines[idx+1].split(".Importer")[0]
+			imptr = frag.split()[-1]
+			acct = stdout_lines[idx+2].split()[-1]
+			print(bcolors.OKBLUE + fn + bcolors.ENDC)
+			print("\t{0} ({1})".format(acct,imptr))
+	check_fatal_error(err)
+	return
 
 def extract_files():
 	make_path(staging_path)
@@ -452,8 +502,11 @@ def split_ledger():
 
 ##### Start of script
 
-# typical workflow is extract -> update -> clean -> remove
-# probably should combine clean and remove
+# typical workflow is: 
+# 	last -> [manually download files from last dates] ->
+# 	identify -> extract -> update -> clean -> remove -> archive
+if clargs.identify:
+	identify_files()
 if clargs.extract or clargs.check:
 	extract_files()
 if clargs.update:
