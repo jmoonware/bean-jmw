@@ -29,6 +29,7 @@ fido_column_map = {
 }
 
 fido_cols = list(fido_column_map.keys())
+cash_equivalents = ['FDRXX'] # FIXME: This isn't really cash
 
 from collections import namedtuple
 FidoRow = namedtuple('FidoRow',list(fido_column_map.values()))
@@ -136,11 +137,16 @@ class Importer(ImporterProtocol):
 					acct = self.account_name + ":Cash"
 					amt = Amount(uni.amount,self.currency)
 				else:
-					acct = ":".join([self.account_name,uni.symbol])
-					if uni.quantity!=None:
-						amt = Amount(uni.quantity,uni.symbol)
+					symbol = uni.symbol
+					if uni.symbol in cash_equivalents:
+						symbol = self.currency
+						acct = ":".join([self.account_name,"Cash"])
 					else:
-						amt = Amount(uni.amount,uni.symbol)
+						acct = ":".join([self.account_name,symbol])
+					if uni.quantity!=None:
+						amt = Amount(uni.quantity,symbol)
+					else:
+						amt = Amount(uni.amount,symbol)
 				nbal = Balance(
 					meta=new_metadata("FidoPosition", 0),
 					date = uni.date,

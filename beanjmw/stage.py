@@ -181,7 +181,6 @@ def run_command_std(com):
 	return(error,stdout_lines,stderr_lines)
 
 def identify_files():
-	make_path(archive_path)
 	ecom = "python -m beanjmw.bci identify"
 	err,stdout_lines,stderr_lines=run_command_std(ecom)
 	# re-parse identify output to something simpler unless verbose
@@ -210,10 +209,16 @@ def archive_files():
 			fn = stdout_lines[idx+3].split()[-1]
 			print(bcolors.OKBLUE + fn + bcolors.ENDC)
 	check_fatal_error(err)
-	if len(stdout_lines) > 0: # something to do
+	if len(stdout_lines) > 0 or clargs.test: # something to do
 		doit = input("Are these destinations OK [Yes/n]?")
 		if doit=="Y" or doit=="Yes":
 			print("Archiving...")
+			ecom = "python -m beanjmw.bci file -o {0}".format(archive_path)
+			if clargs.test:
+				print(ecom)
+			else: # really do it
+				err,stdout_lines,stderr_lines=run_command_std(ecom)
+				check_fatal_error(err)
 		else:
 			print("Skipping - files are still in place") 
 	return

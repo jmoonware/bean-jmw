@@ -33,6 +33,7 @@ investment_actions={
 'WIRE TRANSFER':'Transfer',
 'TAX W/H':'Xout',
 'NORMAL DISTR':'Xout',
+'REDEMPTION FROM CORE':'Redemption',
 }
 
 default_open_date='2000-01-01'

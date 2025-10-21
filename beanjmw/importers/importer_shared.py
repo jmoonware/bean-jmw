@@ -29,6 +29,7 @@ investment_actions=[
 'MiscInc',
 'MiscExp',
 'Other', 
+'Redemption',
 'ReinvDiv',
 'ReinvLg',
 'ReinvSh',
@@ -342,6 +343,15 @@ def generate_investment_postings(uni,account_name,currency,account_currency,cash
 	elif uni.action in ['Xin','Xout']: 
 		postings[0]=p0._replace(
 			account = ":".join([account_name,"Cash"]),
+			units=Amount(amt,currency)
+		)
+		postings[1]=p1._replace(
+			account = ":".join([account_name, "Transfer"]),
+			units=Amount(-amt,sec_currency),
+		)
+	elif uni.action in ['Redemption']: # another FIDO Kludge
+		postings[0]=p0._replace(
+			account = ":".join([account_name,"Redemption"]),
 			units=Amount(amt,currency)
 		)
 		postings[1]=p1._replace(
