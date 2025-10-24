@@ -4,18 +4,21 @@ Code for using beancount v2 plain-text accounting package.
 
 This project implements per-account automatic payee and account assignment to transactions (stored in yaml files), and deduplication. Here is a brief description of each script (see the [Wiki](https://github.com/jmoonware/bean-jmw/wiki) for more details):
 
-* stage.py - Used to iteratively import new transactions into per-account ledgers - uses these scripts:
+* stage.py - Used to iteratively import new transactions into per-account ledgers - uses:
   * bci.py - identify, extract, or file actions for updating ledger
-  * bcr.py - reporting script, makes static text or HTML reports
-  * bar.py - dissects portfolio by sector, individual stock, and other categories, scraping info from the web as needed
+
+The following reporting scripts are available:
+* bcr.py - reporting script, makes static text or HTML reports
+* bar.py - dissects portfolio by sector, individual stock, and other categories, scraping info from the web as needed
 
 In addition there are some utility scripts:
 
 * plot_things.py - makes plots of account balances or changes, optionally with cost basis (by time)
 * recent_net_worth.py - prints/plots net worth total (and by institutions)
-* plot_networth.py (deprecated) - simple specialized script to plot net worth over time
 * yaml_util.py - organizes, sorts, possibly simplifies yaml assignment rules
-* bal.py - plots (and prints) the difference between balance of specific account and supplied balance values in a text file (useful for tracking down where balances diverge)
+* Less important/deprecated:
+  * plot_networth.py (deprecated) - simple specialized script to plot net worth over time
+  * bal.py - plots (and prints) the difference between balance of specific account and supplied balance values in a text file (useful for tracking down where balances diverge)
 
 To see examples how each script can be used, run/read the example.sh bash script. 
 
@@ -40,6 +43,12 @@ cd bean-jmw
 pip install -e . 
 ```
 
+I also create an alias:
+
+```
+alias stage='python -m beanjmw.stage'
+```
+
 Inside $FINROOT, create a "downloads" directory. Download stuff from your financial institutions here. I also create a parallel "files" directory that contains all previously ingested files. The 'stage.py' script will also create a couple other directories (backup, staging) when you run it for the first time.
 
 You need to create an accts.py file in the 'downloads' directory. An example of the contents can be found in example_accts.py in the bean-jmw repository, which is also used in the examples.sh script. Copy the example_accts.py file to the downloads directory, rename it accts.py, and modify the contents appropriately. The accts.py file contains the CONFIG list of importers used by beancount, and optionally a dict of ledger name prefixes by accounts for keeping separate ledgers.
@@ -48,29 +57,31 @@ You need to create an accts.py file in the 'downloads' directory. An example of 
 
 Typically, the steps of updating the ledgers consists of the following:
 
-* Download new transactions into the _downloads_ directory
+* If ledgers already exist, run 'stage --last' to see when each ledger was last updated. Use this info to download the right range of dates in the next step.
+* Download new transactions into the _downloads_ directory. This is done manually through each institution's web interface at the moment.
 * Identify the files
-  * Run 'python -m beanjmw.bci identify' to verify that the downloaded files will be imported with the expected importers defined in accts.py (if not, accts.py and/or the downloaded files may require some hand-editing.)
+  * Run 'stage --identify' to verify that the downloaded files will be imported with the expected importers defined in accts.py (if not, accts.py and/or the downloaded files may require some hand-editing.)
 * Run _extract_ to create new transactions in beancount format
   * If using the stage.py script (the ledger dict in accts.py is set-up)
-    > python -m beanjmw.stage --extract
-  * To do this step manually, on each ledger run
+    > stage --extract
+    * The stage script will create a ../staging directory with release candidate ledger files.
+  * To do this step manually, on each ledger run:
     > python -m beanjmw.bci extract -e _existing-ledger_ > _new-transactions_
     * This will extract the new, downloaded transactions and put them in _new-transactions_. The transactions in _new-transactions_ should be incremental (i.e. deduplicated from the _existing-ledger_.)
 * Update yaml rules for any unassigned accounts
-  * Typically, on the first usage of 'bci extract', a few new _unassigned_.yaml files will be created in the downloads/yaml directory (or appended if they already exist), assigning any new transactions that didn't match a rule to 'UNASSIGNED' accounts.
+  * Typically, on the first usage of 'extract', a few new _unassigned_.yaml files will be created in the downloads/yaml directory (or appended if they already exist), assigning any new transactions that didn't match a rule to 'UNASSIGNED' accounts.
   * Edit the _Account_.yaml files in the download/yaml directory to change the new UNASSIGNED accounts to the accounts that are desired (usually I append each _Account_ unassigned.yaml file to the _Account_.yaml file as a start, then edit from there.)
 * Re-run _extract_ with updated rules
 * Create new ledger release candidate
-  * The stage.py script does this automatically in the 'staging' directory and will run a bean-check to make sure it is correct
+  * The stage.py script does this automatically in the 'staging' directory and will run _bean-check_ to make sure it is correct
   * If you are doing this manually, concatenate _existing-ledger_ with _new-transactions_ to a 'release candidate' ledger file (I usually append 'rc' to the name), then run bean-check on this file. If it passes, great- your ledger is now updated. Back-up your _existing-ledger_, then move the release candidate to the _existing-ledger_. 
 * Backup old ledger, move release candidate to current ledger
   * The stage.py script does this with the --update option (and optional --remove option, which cleans up the files) i.e.
-    > python -m beanjmw.stage --update --remove
-* Archive (i.e. _file_ downloaded files) 
+    > stage --update --remove
+* Archive the downloaded files: 
   * Run 
-    > python -m beanjmw.bci file -o ../files 
-* Run reports on new ledger
+    > stage --archive 
+* Run reports on new ledger(s)
   * The example.sh file has examples of how to generate reports
 
 Here is the directory structure that will result from the example.sh script:
@@ -88,8 +99,8 @@ Example_Test/
 
 ```
 
-The ledger(s) will be in the Example_Test directory. 
+The ledger(s) will be in the Example_Test directory (parallel to the sub-folders backup, etc., above). 
 
-The example.sh script demonstrates the stage.py script.
+The example.sh script demonstrates the stage.py script, as well as how to use the bci.py script directly.
 
 Right now this project only supports Linux, although I might add Windows support in the future if there is interest.
