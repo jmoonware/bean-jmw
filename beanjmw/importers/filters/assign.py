@@ -18,7 +18,7 @@ numeric_regex="[0-9]+"
 remove_duplicates=True
 remove_zero_value_transactions=True
 missing_payee_tag="UNASSIGNED"
-unassigned_file_mode="w" # make "a" for append
+unassigned_file_mode="a" # make "a" for append
 quiet=True
 # top-level accounts - by definition
 top_accounts = ['Assets','Expenses','Liabilities','Income','Equity']
