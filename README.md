@@ -1,6 +1,6 @@
 ![build workflow](https://github.com/jmoonware/bean-jmw/actions/workflows/python-app.yml/badge.svg)
 # bean-jmw
-Code for using beancount v2 plain-text accounting package. 
+Code for using beancount v2 plain-text accounting package.
 
 This project implements per-account automatic payee and account assignment to transactions (stored in yaml files), and deduplication. Here is a brief description of each script (see the [Wiki](https://github.com/jmoonware/bean-jmw/wiki) for more details):
 
