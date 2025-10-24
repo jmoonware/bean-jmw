@@ -21,6 +21,7 @@ def fitfun(x,m,b,y0):
 
 ap = argparse.ArgumentParser()
 ap.add_argument('-a','--account',required=False,help='Account regex',default='Groceries')
+ap.add_argument('--exclude',required=False,help='Account regex to exclude',default='')
 ap.add_argument('-f','--ledger_file',required=False,help='Ledger file',default='')
 ap.add_argument('-pf','--price_file',required=False,help='Prices file',default='prices.txt')
 ap.add_argument('-d','--dump',required=False,help='Dump search results (for debugging)',default=False,action='store_true')
@@ -44,7 +45,10 @@ else:
 
 data_table={}
 
-qs = 'select account, date, change, balance from open on {0} close on {1} where account~"{2}" order by date'.format(clargs.start_date,clargs.end_date,clargs.account)
+if len(clargs.exclude)==0:
+	qs = 'select account, date, change, balance from open on {0} close on {1} where account~"{2}" order by date'.format(clargs.start_date,clargs.end_date,clargs.account)
+else:
+	qs = 'select account, date, change, balance from open on {0} close on {1} where account~"{2}" and not account~"{3}" order by date'.format(clargs.start_date,clargs.end_date,clargs.account, clargs.exclude)
 
 qr=query.run_query(entries,config,qs,()) 
 
@@ -101,7 +105,7 @@ min_month=np.min(xdata).month
 max_year=np.max(xdata).year
 max_month=np.max(xdata).month
 
-month_bins = np.array([dt.date(dt(y,m,1)) for y in range(min_year,max_year+1) for m in range(1,13)])
+month_bins = np.array([dt.date(dt(y,m,1)) for y in range(min_year,max_year+1) for m in range(1,13) if ((y < max_year or m < max_month) and (y > min_year or m > min_month))])
 
 year_bins = np.array([dt.date(dt(y,1,1)) for y in range(min_year,max_year+1)])
 

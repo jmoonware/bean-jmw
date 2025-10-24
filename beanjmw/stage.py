@@ -181,19 +181,22 @@ def run_command_std(com):
 	return(error,stdout_lines,stderr_lines)
 
 def identify_files():
+	accts=[]
 	ecom = "python -m beanjmw.bci identify"
 	err,stdout_lines,stderr_lines=run_command_std(ecom)
 	# re-parse identify output to something simpler unless verbose
 	if clargs.verbose:
 		[print(l) for l in stdout_lines]
-	else:
-		for idx in range(0,int(len(stdout_lines)),3):
-			fn = os.path.split(stdout_lines[idx].split()[-1])[-1]
-			frag = stdout_lines[idx+1].split(".Importer")[0]
-			imptr = frag.split()[-1]
-			acct = stdout_lines[idx+2].split()[-1]
-			print(bcolors.OKBLUE + fn + bcolors.ENDC)
-			print("\t{0} ({1})".format(acct,imptr))
+	for idx in range(0,int(len(stdout_lines)),3):
+		fn = os.path.split(stdout_lines[idx].split()[-1])[-1]
+		frag = stdout_lines[idx+1].split(".Importer")[0]
+		imptr = frag.split()[-1]
+		acct = stdout_lines[idx+2].split()[-1]
+		print(bcolors.OKBLUE + fn + bcolors.ENDC)
+		print("\t{0} ({1})".format(acct,imptr))
+		if acct in accts:
+			print(bcolors.WARNING + "Warning: multiple files assigning to {0}; unassigned yaml may be overwitten".format(acct) + bcolors.ENDC)
+		accts.append(acct)
 	check_fatal_error(err)
 	return
 

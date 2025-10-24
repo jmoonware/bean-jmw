@@ -18,6 +18,7 @@ numeric_regex="[0-9]+"
 remove_duplicates=True
 remove_zero_value_transactions=True
 missing_payee_tag="UNASSIGNED"
+unassigned_file_mode="w" # make "a" for append
 quiet=True
 # top-level accounts - by definition
 top_accounts = ['Assets','Expenses','Liabilities','Income','Equity']
@@ -93,7 +94,7 @@ def assign_check_payees(extracted_entries,account,filename=""):
 	if len(unassigned_checks) > 0:
 		hints=len([x for x in unassigned_checks if missing_payee_tag in unassigned_checks[x]])
 		sys.stderr.write("Found {0} unassigned checks, {1} without hints for {2} ({3},{4} entries) for file {5}\n".format(len(unassigned_checks),str(hints),account,len(extracted_entries),len(new_entries),filename))
-		with open(os.path.join(dir_path,check_file_prefix+"_unassigned.yaml"),"a") as f:
+		with open(os.path.join(dir_path,check_file_prefix+"_unassigned.yaml"),unassigned_file_mode) as f:
 			f.write("# Unassigned check payees for {0}\n".format(filename))
 			# order by check number, not item order
 			od=OrderedDict(sorted(unassigned_checks.items()))
@@ -294,7 +295,7 @@ def save_unassigned(unassigned_payees,account_file,ex_file):
 	"""
 	oup=OrderedDict(sorted(unassigned_payees.items()))
 	if len(oup) > 0:
-		with open(os.path.splitext(account_file)[0]+"_unassigned.yaml","a") as f:
+		with open(os.path.splitext(account_file)[0]+"_unassigned.yaml",unassigned_file_mode) as f:
 			f.write("# Unassigned accounts for {0}\n".format(ex_file)) 
 			for k in oup:
 				if len(k) < 40:
