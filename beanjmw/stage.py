@@ -194,8 +194,11 @@ def identify_files():
 		acct = stdout_lines[idx+2].split()[-1]
 		print(bcolors.OKBLUE + fn + bcolors.ENDC)
 		print("\t{0} ({1})".format(acct,imptr))
-		if acct in accts:
-			print(bcolors.WARNING + "Warning: multiple files assigning to {0}; unassigned yaml may be overwitten".format(acct) + bcolors.ENDC)
+# Note: Went back to defaulting to append (with multiple input files you
+#  want to append to fresh unassigned files, not overwrite each time
+#  The solution is to delete unassigned each time stage is run
+#		if acct in accts:
+#			print(bcolors.WARNING + "Warning: multiple files assigning to {0}; unassigned yaml may be overwitten".format(acct) + bcolors.ENDC)
 		accts.append(acct)
 	check_fatal_error(err)
 	return

@@ -42,6 +42,7 @@ action_map={
 'Sold':'Sell',
 'Transfer':'Xout',
 'Wire':'Xout',
+'Online Transfer':'Xout',
 }
 
 # in the Description field, at least since 2021 
