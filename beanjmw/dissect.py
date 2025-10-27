@@ -13,15 +13,34 @@ from bs4 import BeautifulSoup as BS
 from beancount.core.data import Price, Amount, Decimal, Commodity
 import shutil
 from beancount.loader import printer
+import traceback
+import time
 
 #headers = {
 #"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0"
 #}
 
-headers = {"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+# headers = {"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.99 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive'
+}
+
+zack_headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; ChatGPT Example/1.0; +https://openai.com/)"
+    }
 
 cache_dir='yaml'
 cache_timeout_days=5
+
+# used to limit time between requests
+last_info_time=dt.now()
+info_delay=2 # seconds - don't hit Zacks faster than this
+
 
 symbol='VONG' # ETF
 symbol='SPMD' # ETF
@@ -100,24 +119,26 @@ def get_exchange_rate(from_curr,to_curr):
 
 def get_page(url):
 	r=''
+	if 'zacks.com' in url:
+		scrapeheaders=zack_headers
+#		scrapeheaders=headers
+	else:
+		scrapeheaders=headers
 	with requests.Session() as req:
-		req.headers.update(headers)
+		req.headers.update(scrapeheaders)
 		r = req.get(url)
 	return(r)
 
-def get_yahoo(symbol):
-	ret={}
+def scrape_yfinance_tables(soup):
+	titles=[]
+	tables=[]
+	tabs = soup.find_all('div',{'class': 'Mb(25px)'}) 
+	tit_pat='<h3>(.+?)</h3>'
+	row_pat = '<span>([a-z /A-Z]+?)</span>'
+	data_pat = '<span.*?>([0-9]+\.*[0-9]*%*|\s*N/A\s*)</span>'
 	try:
-		r = get_page(yf_holding_url.format(symbol))
-		soup = BS(r.text,features='lxml')
-		tabs = soup.find_all('div',{'class': 'Mb(25px)'}) 
-		row_pat = '<span>([a-z /A-Z]+?)</span>'
-		data_pat = '<span.*?>([0-9]+\.*[0-9]*%*|\s*N/A\s*)</span>'
-		tables=[]
-		titles=[]
 		for t in tabs:
 			tables.append([])
-			tit_pat='<h3>(.+?)</h3>'
 			m = re.search(tit_pat,str(t))
 			if m:
 				n = re.search('<span>(.+?)</span>',m.group(1))
@@ -130,12 +151,61 @@ def get_yahoo(symbol):
 					d = re.search(data_pat,str(els[-1])) 
 					if m and d:
 						tables[-1].append([m.group(1),d.group(1)])
-	
+	except Exception as ex:
+		sys.stderr.write("scrape_yahoo_tables: {0}\n".format(ex))
+		sys.stderr.write(traceback.format_exc()+"\n")
+	return(titles,tables)
+
+def scrape_yfinance_tables_1(soup):
+	tables=[]
+	titles=[]
+	# these are in the css tag
+	tab_data_testid=['portfolio-composition','etf-sector-weightings-overview','top-holdings']
+	# these are the legacy values derived from the title
+	tab_keys=['Overall Portfolio Composition (%)','Sector Weightings (%)','Top Holdings (%)']
+	tabs=[]
+	for tid,tkey in zip(tab_data_testid,tab_keys):
+		stab =soup.find('section',{'data-testid':tid})
+		if stab!=None: 		
+			tabs.append(stab)
+			titles.append(tkey)
+	for stab in tabs:
+		tables.append([])
+		rows = stab.findChildren('tr')
+		if len(rows)==0: # in stacked divs
+			rows = stab.findChildren('div')
+			if len(rows)>0:
+				rows = rows[1:] # skip header row
+		for row in rows:
+			els = row.findChildren('td')
+			if len(els) == 0: # more complex table format
+				els_label = row.findChildren('a')
+				els_data = row.findChildren('span')
+				if len(els_label)>0 and len(els_data)>0:
+					els = [els_label[0],els_data[-1]]
+			if len(els) > 1:
+				row_label = els[0].text.strip()
+				row_data = els[1].text.replace('%','').strip()
+				if row_label and row_data:
+					tables[-1].append([row_label,row_data])
+	return(titles,tables)
+
+def get_yahoo(symbol):
+	ret={}
+	try:
+		r = get_page(yf_holding_url.format(symbol))
+		soup = BS(r.text,features='lxml')
+
+		titles,tables = scrape_yfinance_tables(soup)
+		if len(titles)==0: # try new format as of 2025-10
+			titles,tables = scrape_yfinance_tables_1(soup)
+
 		if len(titles)==len(tables) and len(titles)>0:
 			for t,tab in zip(titles,tables):
 				ret[t]={}
 				for dp in tab:
-					ret[t][dp[0]]=dp[1]
+					if not dp[0] in ret[t]:
+						ret[t][dp[0]]=dp[1]
 	except Exception as ex:
 		sys.stderr.write("get_yahoo: can't get info for {0}:{1}\n".format(symbol,ex))
 	return(ret)			
@@ -219,6 +289,8 @@ def get_holdings_table(symbol,yf_ticker):
 			if re.match(tab_pat,l.strip()):
 				tdat=l
 		perc=[]
+		names=[]
+		symbols=[]
 		if len(tdat)>0:
 			toks=tdat.split('[')[2:] # each table line
 			for tline in toks:
@@ -228,7 +300,6 @@ def get_holdings_table(symbol,yf_ticker):
 				else:
 					perc.append(float(ptoks[perc_col].replace('%','')))
 			raw_symbols=[x.split(',')[symbol_col] for x in toks]
-			symbols=[]
 			for rs in raw_symbols:
 				m = re.findall(sym_pat, rs )
 				if m:
@@ -236,7 +307,6 @@ def get_holdings_table(symbol,yf_ticker):
 				else:
 					symbols.append(rs.strip().replace('"',''))
 			raw_names=[re.split(el_pat,x)[name_col] for x in toks]
-			names=[]
 			for rn in raw_names:
 				m = re.findall(name_pat,rn)
 				if m:
@@ -253,7 +323,8 @@ def get_holdings_table(symbol,yf_ticker):
 #	print(len(symbols),len(perc),len(names))
 #	print(sum(perc))
 	except Exception as ex:
-		sys.stderr.write("Problem getting holdings {0}:{1}\n".format(symbol,ex))
+		sys.stderr.write("get_holdings_table: Problem getting holdings {0}:{1}\n".format(symbol,ex))
+		sys.stderr.write(traceback.format_exc()+"\n")
 
 	# last-chance - don't return an empty table
 	# just use this security at 100%
@@ -359,6 +430,7 @@ def get_info_table(symbol, yf_ticker,summary_table=None):
 			qt="UNKNOWN"
 	except Exception as ex:
 		sys.stderr.write('get_info_table: no info for {0}: {1}\n'.format(symbol,ex))
+		sys.stderr.write(traceback.format_exc()+"\n")
 		qt='UNKNOWN'
 
 	# establish rational defaults as a template
@@ -586,6 +658,7 @@ def quote(symbol,tk=None,prices=None,quote_date=None,quiet=True):
 				sys.stderr.write("Unable to obtain quote for {}\n".format(symbol))
 	except Exception as err:
 		sys.stderr.write("Error getting quote {0}: {1}\n".format(symbol,err))
+		sys.stderr.write(traceback.format_exc()+"\n")
 
 	prc = Price({},date=qd,currency=symbol,amount=Amount(qv,qc))
 	if qc!='UNKNOWN':
@@ -613,6 +686,7 @@ def check_cache(symbol, quiet=True):
 			last_quote_time=tzi.localize(dt.fromisoformat(info_table['QUOTE_DATE']))
 		except ValueError as ve:
 			sys.stderr.write("Error with {0}: {1}\n".format(info_table['QUOTE_DATE'],ve))
+			sys.stderr.write(traceback.format_exc()+"\n")
 			# expire the cache
 			last_quote_time = right_now -timedelta(days=cache_timeout_days+1)
 		if right_now-timedelta(days=cache_timeout_days) < last_quote_time:
@@ -626,6 +700,7 @@ def check_cache(symbol, quiet=True):
 # call this function on each symbol in portfolio
 def get_all(symbol,clobber=True,prices=None,quote_date=None):
 
+	global last_info_time
 	# always make sure cache dir exists
 	if not os.path.isdir(cache_dir):
 		os.makedirs(cache_dir)
@@ -647,11 +722,16 @@ def get_all(symbol,clobber=True,prices=None,quote_date=None):
 	# if we got here, have to reload information
 	sys.stderr.write("Gathering info for {}...\n".format(symbol))
 	try:
+		tdelta = dt.now()-last_info_time
+		if tdelta.total_seconds() < info_delay:
+			time.sleep(info_delay)
 		info_table = get_info_table(symbol, tk, info_table)
 		info_table['HOLDINGS']=get_holdings_table(symbol, tk)
 		info_table['YF_TABLES']=get_yahoo(symbol)
+		last_info_time=dt.now()
 	except Exception as ex:
 		sys.stderr.write("get_all: Can't get info on {0}:{1}\n".format(symbol,ex))
+		sys.stderr.write(traceback.format_exc()+"\n")
 
 	yaml_path = os.path.join(cache_dir,symbol+".yaml")
 	if not os.path.isfile(yaml_path) or clobber:

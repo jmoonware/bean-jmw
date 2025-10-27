@@ -145,6 +145,9 @@ for s in symbol_info:
 	elif 'QUOTE_TYPE' in symbol_info[s]:
 		if symbol_info[s]['QUOTE_TYPE']=='EQUITY':
 			c='Stocks'
+# ETF's aren't necessarily a single asset class...
+#		elif symbol_info[s]['QUOTE_TYPE']=='ETF':
+#			c='Stocks'
 		elif symbol_info[s]['QUOTE_TYPE']=='MONEYMARKET':
 			c='Cash'
 		elif symbol_info[s]['QUOTE_TYPE']=='CASH':
@@ -153,6 +156,8 @@ for s in symbol_info:
 			if cat=='Real Estate':
 				c='Real Estate'
 		basic_info[c]+=symbol_info[s]['TOTAL']
+	else:
+		sys.stderr.write("Warning: unknown asset class (QUOTE_TYPE) for {0}\n".format(s))
 
 #	print(s, s_tot[-1])
 	if 'HOLDINGS' in symbol_info[s]:
