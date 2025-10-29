@@ -10,7 +10,7 @@ import glob
 import subprocess
 
 from beancount.loader import load_file
-from beancount.core.data import Transaction, Balance
+from beancount.core.data import Transaction, Balance, Pad
 from beancount.parser import printer
 
 from datetime import datetime as dt
@@ -455,7 +455,7 @@ def has_acct(acct,e):
 		mat = [acct in pa for pa in paccts]
 		if sum(mat) > 0: # at least one was True
 			ret = True
-	elif type(e) == Balance:
+	elif type(e) == Balance or type(e) == Pad:
 		if acct in e.account:
 			ret = True
 	return(ret)
