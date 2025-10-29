@@ -144,7 +144,7 @@ def fix_rounding(rec,acct):
 	# use total if given, otherwise amount
 	if rec.total and rec.total != 0:
 		amt = rec.total + Decimal('0.00') - fees - commission
-	# amt is cash net of fees and commission
+	# amt is cash before fees and commission
 	elif rec.amount and rec.amount != 0:
 		amt = rec.amount + Decimal('0.00')
 	qty=Decimal(0)

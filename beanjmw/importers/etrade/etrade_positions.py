@@ -8,6 +8,7 @@ from beanjmw.importers import importer_shared
 import os,sys, re
 
 from datetime import datetime as dt
+from datetime import timedelta
 
 etrade_column_map = {
 "Symbol":"symbol",
@@ -19,7 +20,7 @@ etrade_column_map = {
 "Day's Gain $":"days_gain",
 "Total Gain $":"total_gain",
 "Total Gain %":"total_gain_perc",
-"Value $":"value",
+"Value $":"amount",
 }
 
 etrade_cols = list(etrade_column_map.keys())
@@ -28,7 +29,7 @@ from collections import namedtuple
 EtradeRow = namedtuple('EtradeRow',list(etrade_column_map.values()))
 
 class Importer(ImporterProtocol):
-	def __init__(self,account_name,currency='USD',account_number=None):
+	def __init__(self,account_name,currency='USD',account_number=None,pad=False):
 		self.account_name=account_name
 		if not account_number:
 			acct_tok=self.account_name.split(':')[-1]
@@ -38,6 +39,8 @@ class Importer(ImporterProtocol):
 		self.currency=currency
 		self.account_currency={} # added as discovered
 		self.default_payee = "Etrade CSV"
+		# if true, insert pad entries (usually a bad idea, but sometimes needed)
+		self.pad_balances = pad
 		super().__init__()
 
 	def identify(self, file):
@@ -148,16 +151,28 @@ class Importer(ImporterProtocol):
 		balances=[]
 		for uni in unrs:
 			if uni.action=='balance': 
-				if uni.quantity==None and uni.symbol==self.currency: 
+				if uni.quantity==None and uni.symbol.upper()=="CASH": 
 					acct = self.account_name + ":Cash"
 					amt = Amount(uni.amount,self.currency)
 				else:
+					if uni.symbol.upper()=="TOTAL":
+						continue
 					symbol = uni.symbol
 					acct = ":".join([self.account_name,symbol])
 					if uni.quantity!=None:
 						amt = Amount(uni.quantity,symbol)
 					else:
 						amt = Amount(uni.amount,symbol)
+				if self.pad_balances:
+					# adjust date to day before
+					pad_date = uni.date - timedelta(days=1)
+					npad = Pad(
+						meta=new_metadata("EtradePosition", 0),
+						date = pad_date,
+						account = acct,
+						source_account = acct.replace("Assets","Equity"),
+					)
+					balances.append(npad)
 				nbal = Balance(
 					meta=new_metadata("EtradePosition", 0),
 					date = uni.date,
