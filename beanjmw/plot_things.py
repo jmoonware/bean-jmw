@@ -22,7 +22,7 @@ def fitfun(x,m,b,y0):
 ap = argparse.ArgumentParser()
 ap.add_argument('-a','--account',required=False,help='Account regex',default='Groceries')
 ap.add_argument('--exclude',required=False,help='Account regex to exclude',default='')
-ap.add_argument('-f','--ledger_file',required=False,help='Ledger file',default='')
+ap.add_argument('-f','--ledger_file',required=True,help='Ledger file',default='')
 ap.add_argument('-pf','--price_file',required=False,help='Prices file',default='prices.txt')
 ap.add_argument('-d','--dump',required=False,help='Dump search results (for debugging)',default=False,action='store_true')
 ap.add_argument('-e','--error_bars',required=False,help='add 1 std error bars',default=False,action='store_true')

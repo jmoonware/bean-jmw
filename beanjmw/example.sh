@@ -154,7 +154,7 @@ $PNW -f NW_Assets$REPORT_DATE.txt -t SPY -og networth_example.png
 # to the last full year forces the quotes to be from the ledger, not online
 echo "=== Assets breakdown..."
 $BCR -f ../$LEDGER -t Assets -np -ed $END_YEAR-12-31  > Assets.tsv
-$BAR -f ../$LEDGER -f Assets.tsv > Assets_Report_$REPORT_DATE.txt
+$BAR -f Assets.tsv > Assets_Report_$REPORT_DATE.txt
 
 # Finally, we can use 'plot_things' to create time series of particular 
 # accounts, I like to track the monthly expense averages of e.g. utilities 
