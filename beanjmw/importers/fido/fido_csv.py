@@ -46,8 +46,9 @@ fido_column_map = {
 'Symbol':'symbol', 
 'Description':'description', 
 'Type':'type', 
-'Quantity':'quantity', 
+# 'Quantity':'quantity', 
 'Price ($)':'price', 
+'Quantity':'quantity', 
 'Commission ($)':'commission', 
 'Fees ($)':'fees', 
 'Accrued Interest ($)':'accrued_interest',
@@ -78,7 +79,7 @@ class Importer(ImporterProtocol):
 		elif self.version==2:
 			self.acct_col = 2
 		else:
-			sys.stderr.write("Fido csv: unrecog importer version\n")
+			sys.stderr.write("Fido CSV: unrecog importer version\n")
 
 		super().__init__()
 
@@ -179,7 +180,7 @@ class Importer(ImporterProtocol):
 					break
 			# unsure what we should do here so warn
 			if not fido_action:
-				sys.stderr.write("Fido: Unknown inv action: {0} in {1}\n".format(urd["action"],urd))
+				sys.stderr.write("Fido CSV: Unknown inv action: {0} in {1}\n".format(urd["action"],urd))
 		# replace with universal action
 		urd["action"]=fido_action
 		return
@@ -250,7 +251,7 @@ class Importer(ImporterProtocol):
 			with open(filename,'r') as f:
 				lines=f.readlines()
 		except:
-			sys.stderr.write("Unable to open or parse {0}".format(filename))
+			sys.stderr.write("Fido CSV: Unable to open or parse {0}".format(filename))
 			return(table)
 
 		nl=0
@@ -275,7 +276,7 @@ class Importer(ImporterProtocol):
 					is_fido=False
 					break
 		if not is_fido or len(cols)!=len(fido_cols):
-			sys.stderr.write("Bad format {0} (len={1}), should be {2} (len={3})".format(cols,len(cols),fido_cols,len(fido_cols)))
+			sys.stderr.write("Fido CSV: Bad format {0} (len={1}), should be {2} (len={3})".format(cols,len(cols),fido_cols,len(fido_cols)))
 			return(table)
 	
 		# it's got the right columns, now extract the data	

@@ -1,4 +1,4 @@
-# custom importer to load simple CSV  account history
+# custom importer to load simple text/csv account history
 
 from beancount.ingest.importer import ImporterProtocol
 from beancount.core.data import Transaction,Posting,Amount,new_metadata,EMPTY_SET,Cost,Decimal,Open,Booking,Pad, NoneType
@@ -9,9 +9,6 @@ import os,sys, re
 from datetime import datetime as dt
 
 default_open_date='2000-01-01'
-
-# column delimiter
-splitchar=',' 
 
 # currency symbol - sometimes amount strings have these
 currency_symbol='$'
@@ -50,6 +47,13 @@ class Importer(ImporterProtocol):
 		self.csv_row_fields = list(csv_map.values())
 		self.csv_cols = list(csv_map.keys())
 		self.CsvRow = namedtuple('CsvRow',self.csv_row_fields)
+		# column delimiter
+		self.splitchar = ',' 
+		# file extension to find
+		self.file_ext = '.CSV'
+		# ignore lines that contain this in the description
+		# KLUDGE for BoA text balance lines (3 fields vs. 4)
+		self.ignore_description=""
 		super().__init__()
 
 	def identify(self, file):
@@ -59,7 +63,7 @@ class Importer(ImporterProtocol):
 			Returns:
 				A boolean, true if this importer can handle this file.
 		"""
-		if os.path.splitext(file.name)[1].upper()=='.CSV':
+		if os.path.splitext(file.name)[1].upper()==self.file_ext:
 			# assumes account # comes up in first head() lines...
 			head_lines=file.head(num_bytes=100000).split('\n')
 			found=False
@@ -157,7 +161,11 @@ class Importer(ImporterProtocol):
 
 		amt = Decimal('0')
 		if len(fr.amount)>0:
-			amt = Decimal(fr.amount.replace(currency_symbol,''))
+			try:
+				clean_amount = fr.amount.replace(',','')
+				amt = Decimal(clean_amount.replace(currency_symbol,''))
+			except:
+				sys.stderr.write("csv_general: bad decimal conversion amount {0}\n".format(fr.amount))
 		postings.append(
 			Posting(
 				account = self.account_name,
@@ -188,7 +196,7 @@ class Importer(ImporterProtocol):
 
 		# make sure the columns haven't changed... 
 		is_csv=True
-		cols=[c.strip() for c in lines[nl].strip(', ').split(',')]
+		cols=[c.strip() for c in lines[nl].strip(', ').split(self.splitchar)]
 		for c,fc in zip(cols,self.csv_cols):
 			if len(c.strip())!=0 and c!=fc:
 				is_csv=False
@@ -199,15 +207,17 @@ class Importer(ImporterProtocol):
 	
 		# it's got the right columns, now extract the data	
 		for il,l in enumerate(lines[nl+1:]):
+			if len(self.ignore_description)>0 and self.ignore_description in l:
+				continue
 			clean_l=l.strip(', \n')
-			ctoks=clean_l.split(splitchar)
+			ctoks=[x for x in clean_l.split(self.splitchar) if len(x) > 0]
 			if len(ctoks) > len(self.csv_cols) and '"' in l: # splitter in quote! 
 				dq=re.search('"(.*?)"',clean_l)
 				if dq:
 					old_tok=clean_l[dq.span()[0]:dq.span()[1]]
-					new_tok=clean_l[dq.span()[0]:dq.span()[1]].replace(splitchar,' ')
+					new_tok=clean_l[dq.span()[0]:dq.span()[1]].replace(self.splitchar,' ')
 					clean_l=clean_l.replace(old_tok,new_tok)
-			ctoks=clean_l.split(splitchar)
+			ctoks=[x for x in clean_l.split(self.splitchar) if len(x) > 0]
 			if len(ctoks)==len(self.csv_cols):
 				# remove double quotes
 				sctoks=[c.strip().replace('"','') for c in ctoks]
